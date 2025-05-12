@@ -1,0 +1,17 @@
+.idea
+venv
+images
+v2/.env
+env
+__pycache__/
+lib/
+.zip
+.env
+*.env
+*/.env
+OldCode/code_flow_tree.html
+app.db
+*.db
+Code2
+Doc.code-workspace
+venv/

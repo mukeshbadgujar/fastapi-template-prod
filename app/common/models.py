@@ -31,4 +31,27 @@ class ApiCallLog(BaseModel):
     error_message: Optional[str] = None
     timestamp: datetime = datetime.now()
     vendor: Optional[str] = None
-    fallback_used: bool = False 
+    fallback_used: bool = False
+
+
+# Application Request Log Model
+class AppRequestLog(BaseModel):
+    """
+    Model for application request logging
+    """
+    request_id: str
+    endpoint: str
+    method: str
+    client_ip: Optional[str] = None
+    user_agent: Optional[str] = None
+    user_id: Optional[str] = None
+    request_path: str
+    request_query_params: Dict[str, Any] = {}
+    request_body: Optional[Dict[str, Any]] = None
+    request_headers: Dict[str, str] = {}
+    response_body: Optional[Dict[str, Any]] = None
+    response_headers: Dict[str, str] = {}
+    status_code: int
+    execution_time_ms: float
+    error_message: Optional[str] = None
+    timestamp: datetime = datetime.now() 

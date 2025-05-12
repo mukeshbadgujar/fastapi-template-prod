@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     API_LOG_SQLITE_ENABLED: bool = True
     API_LOG_FALLBACK_ENABLED: bool = True
     API_LOG_SQLITE_PATH: str = "api_logs.db"
+    API_LOG_REAL_TIME: bool = True
     
     # AWS Credentials already we have in env variables so no need to set it here
     # Explicitly add AWS region to avoid validation errors

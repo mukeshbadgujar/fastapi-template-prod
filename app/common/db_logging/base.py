@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from app.common.models import ApiCallLog
+from app.common.models import ApiCallLog, AppRequestLog
 
 
 class BaseDBLogger(ABC):
@@ -21,4 +21,8 @@ class BaseDBLogger(ABC):
     @abstractmethod
     def is_available(self) -> bool:
         """Check if logger is available"""
+        pass
+        
+    async def log_app_request(self, log_data: AppRequestLog) -> None:
+        """Log application request to database - optional implementation"""
         pass 

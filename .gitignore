@@ -15,3 +15,14 @@ app.db
 Code2
 Doc.code-workspace
 venv/
+*.log
+*.sqlite
+*.sqlite3
+*.pdb
+*.egg-info
+*.egg
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.pkl

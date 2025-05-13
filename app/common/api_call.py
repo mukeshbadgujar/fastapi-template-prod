@@ -236,6 +236,7 @@ class ApiClient:
         # Start timing
         start_time = time.time()
         
+        
         # Log request
         log_data = ApiCallLog(
             request_id=request_id,
@@ -244,7 +245,7 @@ class ApiClient:
             partner_journey_id=partner_journey_id,
             account_id=account_id,
             application_id=application_id,
-            request_body=json_data if json_data else data,
+            request_body=json_data if json_data else data or params,
             request_headers={k: "***" if k.lower() in ["authorization", "x-api-key", "apikey"] else v
                              for k, v in merged_headers.items()},
             status=ApiStatus.FAILURE,

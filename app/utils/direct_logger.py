@@ -67,7 +67,7 @@ def ensure_sqlite_table_exists():
 SQLITE_INITIALIZED = ensure_sqlite_table_exists()
 
 
-def log_request_direct(request_id, endpoint, method, path, response, status_code, client_ip=None, user_agent=None, 
+def log_request_direct(request_id, endpoint, method, path, response, response_body, status_code, client_ip=None, user_agent=None, 
                       request_query_params=None, request_body=None, request_headers=None, execution_time_ms=0, error_message=None):
     """
     Log a request directly to SQLite with minimal processing
@@ -78,31 +78,7 @@ def log_request_direct(request_id, endpoint, method, path, response, status_code
     
     try:
         # Get response body as text
-        response_body = "{}"
         response_headers = "{}"
-        
-        # Check for cached response content from CachedJSONResponse
-        if response and hasattr(response, "_raw_content"):
-            try:
-                # Use the pre-cached content
-                if isinstance(response._raw_content, dict):
-                    response_body = json.dumps(response._raw_content)
-                    logger.info(f"Using cached object content for logging. First 50 chars: {response_body[:50]}...")
-                else:
-                    response_body = str(response._raw_content)
-                    logger.info(f"Using cached string content for logging. First 50 chars: {response_body[:50]}...")
-            except Exception as e:
-                logger.error(f"Error using cached content: {str(e)}")
-        # Try to read body directly
-        elif response and hasattr(response, "body") and response.body:
-            try:
-                # Get raw body as text
-                body_text = response.body.decode("utf-8")
-                logger.info(f"Raw response body first 50 chars: {body_text[:50]}...")
-                response_body = body_text
-            except Exception as e:
-                logger.error(f"Error reading response body: {str(e)}")
-                response_body = json.dumps({"error": "Failed to read response body"})
         
         # Get response headers if available
         if response and hasattr(response, "headers"):
@@ -124,14 +100,14 @@ def log_request_direct(request_id, endpoint, method, path, response, status_code
             query_params_json = json.dumps(request_query_params)
             request_body_json = json.dumps(request_body)
             request_headers_json = json.dumps(request_headers)
+            response_body = json.dumps(response_body)
         except Exception as e:
             logger.error(f"Error serializing request data: {str(e)}")
             query_params_json = "{}"
             request_body_json = "{}"
             request_headers_json = "{}"
+            response_body = "{}"
         
-        # Explicitly log the response we're storing
-        logger.info(f"Response to be logged: first 50 chars: {response_body[:50]}...")
         
         # Connect to DB and insert record
         with sqlite3.connect(SQLITE_DB_PATH) as conn:

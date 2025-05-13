@@ -202,6 +202,95 @@ Run tests with pytest:
 pytest
 ```
 
+## API Examples
+
+The following curl examples demonstrate how to interact with the API endpoints. You can also find a complete Postman collection at [https://www.postman.com/protuple/workspace/fastapi-template-prod](https://www.postman.com/protuple/workspace/fastapi-template-prod).
+
+### Health Check
+
+```bash
+curl --location 'http://localhost:8000/health' \
+--header 'Accept: application/json'
+```
+
+### Weather API
+
+```bash
+curl --location 'http://localhost:8000/api/weather?city=London' \
+--header 'Accept: application/json'
+```
+
+### Template Endpoint
+
+```bash
+curl --location 'http://localhost:8000/api/template' \
+--header 'Content-Type: application/json' \
+--header 'Accept: application/json' \
+--data '{
+    "name": "Example",
+    "description": "This is a test request",
+    "priority": "high"
+}'
+```
+
+## Contributing
+
+We are actively accepting contributions to this project! Here's how you can contribute:
+
+### Contribution Guidelines
+
+1. **Fork the Repository**
+   - Fork the project on GitHub to your own account
+
+2. **Clone Your Fork**
+   ```bash
+   git clone https://github.com/yourusername/fastapi-template-prod.git
+   cd fastapi-template-prod
+   ```
+
+3. **Create a Branch**
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+4. **Make Your Changes**
+   - Implement your feature or bug fix
+   - Add or update tests as necessary
+   - Follow the existing code style and project structure
+
+5. **Run Tests**
+   ```bash
+   pytest
+   ```
+
+6. **Commit Your Changes**
+   ```bash
+   git commit -m "Add feature: your feature description"
+   ```
+
+7. **Push to Your Fork**
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+
+8. **Create a Pull Request**
+   - Go to the original repository on GitHub
+   - Click "New pull request"
+   - Select your fork and branch
+   - Provide a clear description of your changes
+   - Reference any related issues using #issue-number
+
+### Pull Request Guidelines
+
+- Keep your changes focused and related to a single issue/feature
+- Include tests for any new functionality
+- Ensure all tests pass before submitting
+- Update documentation if needed
+- Follow the project's coding style
+- Be responsive to feedback and questions on your PR
+
+We aim to review all pull requests promptly. Thank you for your contributions!
+
 ## Deployment
 
 ### Production Deployment
@@ -214,4 +303,4 @@ pytest
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.

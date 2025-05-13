@@ -244,7 +244,7 @@ We are actively accepting contributions to this project! Here's how you can cont
 
 2. **Clone Your Fork**
    ```bash
-   git clone https://github.com/yourusername/fastapi-template-prod.git
+   git clone https://github.com/mukeshbadgujar/fastapi-template-prod.git
    cd fastapi-template-prod
    ```
 

@@ -1,5 +1,5 @@
 import boto3
-from app.common.models import ApiCallLog
+from app.models.models_request_response import ApiCallLog
 from app.common.db_logging.base import BaseDBLogger
 from app.config.settings import settings
 from app.utils.logger import logger

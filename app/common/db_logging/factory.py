@@ -1,5 +1,5 @@
 from typing import List, Optional
-from app.common.models import ApiCallLog, AppRequestLog
+from app.models.models_request_response import ApiCallLog, AppRequestLog
 from app.common.db_logging.base import BaseDBLogger
 from app.common.db_logging.mongo_logger import MongoLogger
 from app.common.db_logging.dynamo_logger import DynamoLogger

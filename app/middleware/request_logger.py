@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.concurrency import iterate_in_threadpool
 from starlette.types import ASGIApp
 
-from app.common.models import AppRequestLog
+from app.models.models_request_response import AppRequestLog
 from app.common.db_logging.factory import DBLoggerFactory, global_logger_factory
 from app.config.settings import settings
 from app.utils.direct_logger import log_request_direct, ensure_sqlite_table_exists

@@ -1,7 +1,7 @@
 import json
 import sqlite3
 from pathlib import Path
-from app.common.models import ApiCallLog, AppRequestLog
+from app.models.models_request_response import ApiCallLog, AppRequestLog
 from app.common.db_logging.base import BaseDBLogger
 from app.config.settings import settings
 from app.utils.logger import logger

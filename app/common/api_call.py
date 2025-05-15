@@ -14,7 +14,7 @@ from httpx import AsyncClient, RequestError, Response, Timeout
 from pydantic import BaseModel, SecretStr
 
 from app.common.exceptions import ExternalAPIException, ServiceUnavailableException
-from app.common.models import ApiStatus, ApiCallLog
+from app.models.models_request_response import ApiStatus, ApiCallLog
 from app.config.settings import settings
 from app.utils.logger import logger
 from app.common.db_logging.factory import DBLoggerFactory

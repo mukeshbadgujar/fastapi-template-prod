@@ -13,6 +13,7 @@ A feature-rich, production-grade FastAPI template for building scalable web serv
 - **Middleware** support for easy integration of custom middleware
 - **Request/Response validation** using Pydantic schemas
 - **Health check endpoint** for monitoring
+- **Code quality tools** with pre-commit hooks for linting, formatting and type checking
 
 ## Project Structure
 
@@ -50,6 +51,13 @@ fastapi-template-prod/
 ├── alembic.ini                # Alembic configuration
 ├── docker-compose.yml         # Docker Compose configuration
 ├── Dockerfile                 # Docker configuration
+├── .flake8                    # Flake8 linting configuration
+├── .pylintrc                  # Pylint configuration
+├── mypy.ini                   # MyPy type checking configuration
+├── .isort.cfg                 # Import sorting configuration
+├── .pre-commit-config.yaml    # Pre-commit hooks configuration
+├── .github/workflows/         # GitHub Actions workflows
+├── .gitlab-ci.yml             # GitLab CI pipeline configuration
 ├── README.md                  # This file
 └── requirements.txt           # Python dependencies
 ```
@@ -85,6 +93,21 @@ fastapi-template-prod/
    ```bash
    cp .env.example .env
    # Edit .env with your configuration
+   ```
+
+5. Set up linting tools for code quality (recommended):
+   ```bash
+   # Run the linting setup script
+   chmod +x setup_linting.sh
+   ./setup_linting.sh
+
+   # This installs and configures:
+   # - flake8 (style guide enforcement)
+   # - pylint (code analysis)
+   # - mypy (static type checking)
+   # - isort (import sorting)
+   # - black (code formatting)
+   # - pre-commit (git hooks)
    ```
 
 ### Running the Application
@@ -194,6 +217,44 @@ logger.set_context(
 )
 ```
 
+### Code Quality and Linting
+
+The project includes several tools to ensure code quality:
+
+1. **flake8** - For style guide enforcement
+   ```bash
+   flake8 .
+   ```
+
+2. **pylint** - For code analysis (finds unused imports, undefined variables, etc.)
+   ```bash
+   pylint app
+   ```
+
+3. **mypy** - For static type checking
+   ```bash
+   mypy app
+   ```
+
+4. **isort** - For import sorting
+   ```bash
+   isort .
+   ```
+
+5. **black** - For code formatting
+   ```bash
+   black .
+   ```
+
+**Pre-commit hooks** automatically run these checks before each commit. To manually trigger them:
+```bash
+pre-commit run --all-files
+```
+
+**CI/CD Integration:**
+- GitHub Actions and GitLab CI are preconfigured to run these checks on every push and pull/merge request
+- Check `.github/workflows/lint.yml` and `.gitlab-ci.yml` for the configuration
+
 ## Testing
 
 Run tests with pytest:
@@ -285,6 +346,7 @@ We are actively accepting contributions to this project! Here's how you can cont
 - Keep your changes focused and related to a single issue/feature
 - Include tests for any new functionality
 - Ensure all tests pass before submitting
+- Make sure all linting checks pass (`pre-commit run --all-files`)
 - Update documentation if needed
 - Follow the project's coding style
 - Be responsive to feedback and questions on your PR

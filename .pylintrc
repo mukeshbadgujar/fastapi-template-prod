@@ -1,0 +1,12 @@
+[MASTER]
+ignore=alembic,venv,env
+init-hook='import sys; sys.path.append(".")'
+
+[MESSAGES CONTROL]
+disable=C0111,R0903,C0103,R0913,R0914,C0302,R0912,R0915,R0902,W0212,C0330
+
+[FORMAT]
+max-line-length=100
+
+[DESIGN]
+max-args=10

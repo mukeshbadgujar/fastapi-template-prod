@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, EmailStr, validator
+from pydantic import BaseModel, EmailStr, Field, validator
 
 
 # Base model shared between create/update/read operations
@@ -22,7 +22,7 @@ class ItemCreate(ItemBase):
     """
     # Additional fields required for creation only
     category_id: int = Field(..., ge=1, description="Category ID the item belongs to")
-    
+
     @validator("name")
     def name_must_not_contain_special_chars(cls, v):
         """
@@ -37,14 +37,14 @@ class ItemCreate(ItemBase):
 class ItemUpdate(BaseModel):
     """
     Model for updating an existing item
-    
+
     All fields are optional since this is for updates
     """
     name: Optional[str] = Field(None, min_length=1, max_length=100, description="The name of the item")
     description: Optional[str] = Field(None, max_length=1000, description="Description of the item")
     is_active: Optional[bool] = Field(None, description="Whether the item is active")
     category_id: Optional[int] = Field(None, ge=1, description="Category ID the item belongs to")
-    
+
     @validator("name")
     def name_must_not_contain_special_chars(cls, v):
         """
@@ -59,21 +59,21 @@ class ItemUpdate(BaseModel):
 class ItemRead(ItemBase):
     """
     Model for returning item data
-    
+
     Includes all fields from the database
     """
     id: int = Field(..., description="The unique identifier of the item")
     category_id: int = Field(..., description="Category ID the item belongs to")
     created_at: datetime = Field(..., description="When the item was created")
     updated_at: Optional[datetime] = Field(None, description="When the item was last updated")
-    
+
     class Config:
         """
         Pydantic config for this model
         """
         # Allow reading data from ORM objects
         from_attributes = True
-        
+
         # Schema examples for documentation
         json_schema_extra = {
             "example": {
@@ -128,7 +128,7 @@ class UserRead(UserBase):
     id: UUID = Field(..., description="The unique identifier of the user")
     created_at: datetime = Field(..., description="When the user was created")
     updated_at: Optional[datetime] = Field(None, description="When the user was last updated")
-    
+
     class Config:
         """Pydantic config"""
         from_attributes = True
@@ -147,4 +147,4 @@ class TokenPayload(BaseModel):
     sub: str = Field(..., description="Subject (user ID)")
     exp: int = Field(..., description="Expiration time (UNIX timestamp)")
     iat: int = Field(..., description="Issued at time (UNIX timestamp)")
-    scope: str = Field("access_token", description="Token scope") 
+    scope: str = Field("access_token", description="Token scope")

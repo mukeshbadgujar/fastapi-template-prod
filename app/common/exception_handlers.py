@@ -7,14 +7,14 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
 from app.common.exceptions import BaseAPIException
-from app.common.response import ErrorDetail, ErrorCode, ResponseUtil, CustomJSONResponse
+from app.common.response import CustomJSONResponse, ErrorCode, ErrorDetail, ResponseUtil
 from app.utils.logger import logger
 
 
 def register_exception_handlers(app: FastAPI) -> None:
     """
     Register all exception handlers with the FastAPI application
-    
+
     Args:
         app: FastAPI application instance
     """
@@ -28,22 +28,22 @@ def register_exception_handlers(app: FastAPI) -> None:
 async def http_exception_handler(request: Request, exc: HTTPException) -> CustomJSONResponse:
     """
     Handle standard HTTPExceptions and return formatted response
-    
+
     Args:
         request: FastAPI request
         exc: HTTPException
-        
+
     Returns:
         Standardized error response
     """
     request_id = getattr(request.state, "request_id", None)
     start_time = getattr(request.state, "start_time", None)
-    
+
     # Calculate processing time if start_time exists
     elapsed_ms = None
     if start_time:
         elapsed_ms = (time.time() - start_time) * 1000
-    
+
     # Log the exception
     logger.error(
         f"HTTP exception: {exc.status_code} - {exc.detail}",
@@ -55,13 +55,13 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> Custom
             "method": request.method,
         }
     )
-    
+
     # Convert to standard error response
     error = ErrorDetail(
         code=get_error_code_for_status(exc.status_code),
         message=str(exc.detail)
     )
-    
+
     return ResponseUtil.error_response(
         errors=[error],
         message=str(exc.detail),
@@ -74,25 +74,25 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> Custom
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> CustomJSONResponse:
     """
     Handle validation errors and return formatted response
-    
+
     Args:
         request: FastAPI request
         exc: RequestValidationError
-        
+
     Returns:
         Standardized error response
     """
     request_id = getattr(request.state, "request_id", None)
     start_time = getattr(request.state, "start_time", None)
-    
+
     # Calculate processing time if start_time exists
     elapsed_ms = None
     if start_time:
         elapsed_ms = (time.time() - start_time) * 1000
-    
+
     # Convert validation errors to a list of dicts
     errors = exc.errors()
-    
+
     # Log the validation errors
     logger.error(
         f"Validation error: {len(errors)} validation errors",
@@ -103,7 +103,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "method": request.method,
         }
     )
-    
+
     return ResponseUtil.validation_error(
         errors=errors,
         message="Request validation error",
@@ -115,22 +115,22 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def api_exception_handler(request: Request, exc: BaseAPIException) -> CustomJSONResponse:
     """
     Handle custom API exceptions and return formatted response
-    
+
     Args:
         request: FastAPI request
         exc: BaseAPIException
-        
+
     Returns:
         Standardized error response
     """
     request_id = getattr(request.state, "request_id", None)
     start_time = getattr(request.state, "start_time", None)
-    
+
     # Calculate processing time if start_time exists
     elapsed_ms = None
     if start_time:
         elapsed_ms = (time.time() - start_time) * 1000
-    
+
     # Log the exception
     logger.error(
         f"API exception: {exc.status_code} - {exc.detail}",
@@ -142,13 +142,13 @@ async def api_exception_handler(request: Request, exc: BaseAPIException) -> Cust
             "method": request.method,
         }
     )
-    
+
     # Convert to standard error response
     error = ErrorDetail(
         code=get_error_code_for_status(exc.status_code),
         message=str(exc.detail)
     )
-    
+
     return ResponseUtil.error_response(
         errors=[error],
         message=str(exc.detail),
@@ -161,22 +161,22 @@ async def api_exception_handler(request: Request, exc: BaseAPIException) -> Cust
 async def unhandled_exception_handler(request: Request, exc: Exception) -> CustomJSONResponse:
     """
     Handle unhandled exceptions and return formatted response
-    
+
     Args:
         request: FastAPI request
         exc: Unhandled exception
-        
+
     Returns:
         Standardized error response
     """
     request_id = getattr(request.state, "request_id", None)
     start_time = getattr(request.state, "start_time", None)
-    
+
     # Calculate processing time if start_time exists
     elapsed_ms = None
     if start_time:
         elapsed_ms = (time.time() - start_time) * 1000
-    
+
     # Log the exception
     logger.error(
         f"Unhandled exception: {str(exc)}",
@@ -187,7 +187,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> Custo
             "method": request.method,
         }
     )
-    
+
     # Use a generic error message for security reasons
     return ResponseUtil.server_error(
         message="An unexpected error occurred",
@@ -199,10 +199,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> Custo
 def get_error_code_for_status(status_code: int) -> str:
     """
     Map HTTP status code to an error code
-    
+
     Args:
         status_code: HTTP status code
-        
+
     Returns:
         Error code string
     """
@@ -220,5 +220,5 @@ def get_error_code_for_status(status_code: int) -> str:
         503: ErrorCode.SERVICE_UNAVAILABLE,
         504: ErrorCode.GATEWAY_TIMEOUT,
     }
-    
-    return error_code_map.get(status_code, ErrorCode.INTERNAL_SERVER_ERROR) 
+
+    return error_code_map.get(status_code, ErrorCode.INTERNAL_SERVER_ERROR)

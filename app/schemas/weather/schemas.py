@@ -1,4 +1,5 @@
 from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -7,7 +8,7 @@ class WeatherRequest(BaseModel):
     city: str = Field(..., description="City name", example="London")
     country_code: Optional[str] = Field(None, description="Country code (ISO 3166)", example="uk")
     units: str = Field("metric", description="Units of measurement", example="metric")
-    
+
     # Prevent extra fields
     model_config = {
         "extra": "forbid",
@@ -31,7 +32,7 @@ class WeatherData(BaseModel):
     humidity: int = Field(..., description="Humidity percentage")
     description: str = Field(..., description="Weather description")
     wind_speed: float = Field(..., description="Wind speed")
-    
+
     model_config = {
         "json_schema_extra": {
             "examples": [
@@ -45,4 +46,4 @@ class WeatherData(BaseModel):
                 }
             ]
         }
-    } 
+    }

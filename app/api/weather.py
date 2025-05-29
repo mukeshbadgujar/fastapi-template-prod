@@ -1,4 +1,5 @@
 from typing import Optional
+
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
 
@@ -17,14 +18,14 @@ async def get_weather(
 ):
     """
     Get current weather information for a specified city.
-    
+
     Uses OpenWeatherMap API to fetch current weather data.
     """
     # Form the location query parameter
     location = city
     if country_code:
         location = f"{city},{country_code}"
-    
+
     # Make the API call using our utility
     api_result = await call_api(
         url=f"https://api.openweathermap.org/data/2.5/weather",
@@ -37,7 +38,7 @@ async def get_weather(
         vendor="openweathermap",
         timeout=10.0
     )
-    
+
     # Handle API response
     if not api_result["success"]:
         return ResponseUtil.error_response(
@@ -49,7 +50,7 @@ async def get_weather(
             status_code=api_result["status_code"] or status.HTTP_503_SERVICE_UNAVAILABLE,
             elapsed_ms=api_result.get("execution_time_ms")
         )
-    
+
     # Extract and transform the weather data
     weather_data = api_result["data"]
     result = WeatherData(
@@ -60,7 +61,7 @@ async def get_weather(
         description=weather_data["weather"][0]["description"],
         wind_speed=weather_data["wind"]["speed"]
     )
-    
+
     return ResponseUtil.success_response(
         data=result.model_dump(),
         message="Weather data retrieved successfully",
@@ -71,14 +72,14 @@ async def get_weather(
 async def create_weather_request(request: WeatherRequest):
     """
     Get current weather information using POST request with JSON body.
-    
+
     Uses the same OpenWeatherMap API but with a more structured request format.
     """
     # Form the location query parameter
     location = request.city
     if request.country_code:
         location = f"{request.city},{request.country_code}"
-    
+
     # Make the API call using our utility
     api_result = await call_api(
         url=f"https://api.openweathermap.org/data/2.5/weather",
@@ -91,7 +92,7 @@ async def create_weather_request(request: WeatherRequest):
         vendor="openweathermap",
         timeout=10.0
     )
-    
+
     # Handle API response
     if not api_result["success"]:
         return ResponseUtil.error_response(
@@ -103,7 +104,7 @@ async def create_weather_request(request: WeatherRequest):
             status_code=api_result["status_code"] or status.HTTP_503_SERVICE_UNAVAILABLE,
             elapsed_ms=api_result.get("execution_time_ms")
         )
-    
+
     # Extract and transform the weather data
     weather_data = api_result["data"]
     result = WeatherData(
@@ -114,9 +115,9 @@ async def create_weather_request(request: WeatherRequest):
         description=weather_data["weather"][0]["description"],
         wind_speed=weather_data["wind"]["speed"]
     )
-    
+
     return ResponseUtil.success_response(
         data=result.model_dump(),
         message="Weather data retrieved successfully",
         elapsed_ms=api_result["execution_time_ms"]
-    ) 
+    )

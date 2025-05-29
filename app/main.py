@@ -1,5 +1,6 @@
-from datetime import datetime
 import json
+from datetime import datetime
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -59,7 +60,7 @@ def create_application() -> FastAPI:
 
     # Setup custom middlewares
     setup_middlewares(application)
-    
+
     # Register exception handlers
     register_exception_handlers(application)
 
@@ -74,16 +75,35 @@ app = create_application()
 
 @app.on_event("startup")
 async def startup_event():
-    """Application startup: register core events"""
-    # You can initialize db, redis, etc. here
-    pass
+    """Application startup: initialize logging backend and other services"""
+    from app.core.logging_backend import get_db_logger
+    from app.utils.logger import logger
+
+    logger.info("FastAPI application starting up", extra={"event_type": "app_startup"})
+
+    # Initialize database logging backend
+    db_logger = await get_db_logger()
+    if db_logger:
+        logger.info("Database logging backend initialized successfully")
+    else:
+        logger.warning("Database logging backend not available - check LOG_DB_URL configuration")
+
+    # You can initialize other services here (redis, external connections, etc.)
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Application shutdown: de-register core events"""
-    # You can close db connections, etc. here
-    pass
+    """Application shutdown: cleanup resources"""
+    from app.core.logging_backend import close_db_logger
+    from app.utils.logger import logger
+
+    logger.info("FastAPI application shutting down", extra={"event_type": "app_shutdown"})
+
+    # Close database logging backend
+    await close_db_logger()
+    logger.info("Database logging backend closed")
+
+    # You can close other connections here (db, redis, etc.)
 
 
 if __name__ == "__main__":

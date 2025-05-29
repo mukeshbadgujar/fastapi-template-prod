@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from pydantic import BaseModel
 
 
@@ -54,4 +55,4 @@ class AppRequestLog(BaseModel):
     status_code: int
     execution_time_ms: float
     error_message: Optional[str] = None
-    timestamp: datetime = datetime.now() 
+    timestamp: datetime = datetime.now()

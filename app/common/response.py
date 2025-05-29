@@ -1,12 +1,11 @@
+import json
 from datetime import datetime
 from enum import Enum
-import json
-from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
+from typing import Any, Dict, List, Optional, TypeVar, Union
 
 from fastapi import status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-
 
 # Type for the data payload
 T = TypeVar("T")
@@ -39,9 +38,9 @@ class CustomJSONResponse(JSONResponse):
     """Custom JSONResponse that properly handles datetime objects"""
     def render(self, content) -> bytes:
         return json.dumps(
-            content, 
-            ensure_ascii=False, 
-            separators=(",", ":"), 
+            content,
+            ensure_ascii=False,
+            separators=(",", ":"),
             default=lambda o: o.isoformat() if isinstance(o, datetime) else str(o)
         ).encode("utf-8")
 
@@ -59,22 +58,22 @@ class ErrorCode:
     CONFLICT = "CONFLICT"
     UNPROCESSABLE_ENTITY = "UNPROCESSABLE_ENTITY"
     TOO_MANY_REQUESTS = "TOO_MANY_REQUESTS"
-    
+
     # Validation errors
     VALIDATION_ERROR = "VALIDATION_ERROR"
     INVALID_INPUT = "INVALID_INPUT"
     MISSING_REQUIRED_FIELD = "MISSING_REQUIRED_FIELD"
-    
+
     # Authentication errors
     INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
     TOKEN_EXPIRED = "TOKEN_EXPIRED"
     INVALID_TOKEN = "INVALID_TOKEN"
-    
+
     # Database errors
     DATABASE_ERROR = "DATABASE_ERROR"
     RECORD_NOT_FOUND = "RECORD_NOT_FOUND"
     DUPLICATE_RECORD = "DUPLICATE_RECORD"
-    
+
     # External service errors
     EXTERNAL_SERVICE_ERROR = "EXTERNAL_SERVICE_ERROR"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
@@ -83,10 +82,10 @@ class ErrorCode:
 
 class ResponseUtil:
     """Utility class for generating standardized API responses"""
-    
+
     @staticmethod
     def success_response(
-        data: Any = None, 
+        data: Any = None,
         message: Optional[str] = None,
         status_code: int = status.HTTP_200_OK,
         request_id: Optional[str] = None,
@@ -95,7 +94,7 @@ class ResponseUtil:
     ) -> CustomJSONResponse:
         """
         Generate a successful API response
-        
+
         Args:
             data: Response payload
             message: Optional success message
@@ -103,47 +102,47 @@ class ResponseUtil:
             request_id: Request ID for tracing
             elapsed_ms: Time taken to process the request in milliseconds
             pagination: Optional pagination information
-            
+
         Returns:
             JSONResponse object with standardized format
         """
         response_id = f"res_{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
-        
+
         # Build response content
         response_content = {
             "status": "success",
             "timestamp": datetime.utcnow(),
             "status_code": status_code
         }
-        
+
         # Add data if provided
         if data is not None:
             response_content["data"] = data
-            
+
         # Add message if provided
         if message:
             response_content["message"] = message
-            
+
         # Add pagination if provided
         if pagination:
             response_content["pagination"] = pagination
-        
+
         # Create custom response
         response = CustomJSONResponse(
             content=response_content,
             status_code=status_code,
             media_type="application/json"
         )
-        
+
         # Add headers for tracing and monitoring
         if request_id:
             response.headers["X-Request-ID"] = request_id
-        
+
         response.headers["X-Response-ID"] = response_id
-        
+
         if elapsed_ms:
             response.headers["X-Response-Time"] = f"{elapsed_ms:.2f}ms"
-        
+
         return response
 
     @staticmethod
@@ -156,23 +155,23 @@ class ResponseUtil:
     ) -> CustomJSONResponse:
         """
         Generate an error API response
-        
+
         Args:
             errors: Error details or list of error details
             message: Optional error message
             status_code: HTTP status code
             request_id: Request ID for tracing
             elapsed_ms: Time taken to process the request in milliseconds
-            
+
         Returns:
             JSONResponse object with standardized format
         """
         response_id = f"res_{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
-        
+
         # Convert single error to list
         if not isinstance(errors, list):
             errors = [errors]
-        
+
         # Build response content
         response_content = {
             "status": "error",
@@ -180,27 +179,27 @@ class ResponseUtil:
             "status_code": status_code,
             "errors": errors
         }
-        
+
         # Add message if provided
         if message:
             response_content["message"] = message
-        
+
         # Create custom response
         response = CustomJSONResponse(
             content=response_content,
             status_code=status_code,
             media_type="application/json"
         )
-        
+
         # Add headers for tracing and monitoring
         if request_id:
             response.headers["X-Request-ID"] = request_id
-        
+
         response.headers["X-Response-ID"] = response_id
-        
+
         if elapsed_ms:
             response.headers["X-Response-Time"] = f"{elapsed_ms:.2f}ms"
-        
+
         return response
 
     @staticmethod
@@ -214,7 +213,7 @@ class ResponseUtil:
     ) -> CustomJSONResponse:
         """
         Generate a warning API response
-        
+
         Args:
             data: Response payload
             message: Warning message
@@ -222,53 +221,53 @@ class ResponseUtil:
             request_id: Request ID for tracing
             elapsed_ms: Time taken to process the request in milliseconds
             errors: Optional list of warning details
-            
+
         Returns:
             JSONResponse object with standardized format
         """
         response_id = f"res_{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
-        
+
         # Build response content
         response_content = {
             "status": "warning",
             "timestamp": datetime.utcnow(),
             "status_code": status_code
         }
-        
+
         # Add data if provided
         if data is not None:
             response_content["data"] = data
-            
+
         # Add message if provided
         if message:
             response_content["message"] = message
-            
+
         # Add errors if provided
         if errors:
             response_content["errors"] = errors
-        
+
         # Create custom response
         response = CustomJSONResponse(
             content=response_content,
             status_code=status_code,
             media_type="application/json"
         )
-        
+
         # Add headers for tracing and monitoring
         if request_id:
             response.headers["X-Request-ID"] = request_id
-        
+
         response.headers["X-Response-ID"] = response_id
-        
+
         if elapsed_ms:
             response.headers["X-Response-Time"] = f"{elapsed_ms:.2f}ms"
-        
+
         return response
-        
+
     # Convenience methods for common errors
     @classmethod
     def not_found(
-        cls, 
+        cls,
         message: str = "Resource not found",
         entity: Optional[str] = None,
         request_id: Optional[str] = None,
@@ -278,12 +277,12 @@ class ResponseUtil:
         detail_msg = message
         if entity:
             detail_msg = f"{entity} not found"
-            
+
         error = {
             "code": ErrorCode.NOT_FOUND,
             "message": detail_msg
         }
-        
+
         return cls.error_response(
             errors=[error],
             message=message,
@@ -291,7 +290,7 @@ class ResponseUtil:
             request_id=request_id,
             elapsed_ms=elapsed_ms
         )
-    
+
     @classmethod
     def validation_error(
         cls,
@@ -302,18 +301,18 @@ class ResponseUtil:
     ) -> CustomJSONResponse:
         """Generate a validation error response from validation errors"""
         error_details = []
-        
+
         for error in errors:
             loc = error.get("loc", [])
             field = ".".join(str(item) for item in loc[1:]) if len(loc) > 1 else ""
-            
+
             error_details.append({
                 "code": ErrorCode.VALIDATION_ERROR,
                 "message": error.get("msg", "Invalid value"),
                 "field": field,
                 "details": {"type": error.get("type", "")}
             })
-        
+
         return cls.error_response(
             errors=error_details,
             message=message,
@@ -321,7 +320,7 @@ class ResponseUtil:
             request_id=request_id,
             elapsed_ms=elapsed_ms
         )
-    
+
     @classmethod
     def server_error(
         cls,
@@ -334,7 +333,7 @@ class ResponseUtil:
             "code": ErrorCode.INTERNAL_SERVER_ERROR,
             "message": message
         }
-        
+
         return cls.error_response(
             errors=[error],
             message=message,
@@ -342,7 +341,7 @@ class ResponseUtil:
             request_id=request_id,
             elapsed_ms=elapsed_ms
         )
-    
+
     @classmethod
     def unauthorized(
         cls,
@@ -355,7 +354,7 @@ class ResponseUtil:
             "code": ErrorCode.UNAUTHORIZED,
             "message": message
         }
-        
+
         response = cls.error_response(
             errors=[error],
             message=message,
@@ -363,10 +362,10 @@ class ResponseUtil:
             request_id=request_id,
             elapsed_ms=elapsed_ms
         )
-        
+
         response.headers["WWW-Authenticate"] = "Bearer"
         return response
-    
+
     @classmethod
     def forbidden(
         cls,
@@ -379,7 +378,7 @@ class ResponseUtil:
             "code": ErrorCode.FORBIDDEN,
             "message": message
         }
-        
+
         return cls.error_response(
             errors=[error],
             message=message,
@@ -387,7 +386,7 @@ class ResponseUtil:
             request_id=request_id,
             elapsed_ms=elapsed_ms
         )
-    
+
     @classmethod
     def bad_request(
         cls,
@@ -397,18 +396,18 @@ class ResponseUtil:
         elapsed_ms: Optional[float] = None,
     ) -> CustomJSONResponse:
         """Generate a bad request error response"""
-        error = {
+        error: Dict[str, Any] = {
             "code": ErrorCode.BAD_REQUEST,
             "message": message
         }
-        
+
         if details:
             error["details"] = details
-        
+
         return cls.error_response(
             errors=[error],
             message=message,
             status_code=status.HTTP_400_BAD_REQUEST,
             request_id=request_id,
             elapsed_ms=elapsed_ms
-        ) 
+        )

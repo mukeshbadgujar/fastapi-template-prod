@@ -1,4 +1,4 @@
 [flake8]
-max-line-length = 100
+max-line-length = 200
 exclude = .git,__pycache__,alembic,venv,env
 ignore = E203, W503

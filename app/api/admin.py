@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel
 import os
+from typing import Any, Dict, List, Optional
 
-from app.utils.direct_logger import get_app_request_logs, get_logged_requests, SQLITE_DB_PATH
-from app.utils.logger import logger
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+
 from app.config.settings import settings
+from app.utils.direct_logger import SQLITE_DB_PATH, get_app_request_logs
+from app.utils.logger import logger
 
 # Create admin router
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -39,7 +40,7 @@ async def get_request_logs(
 ):
     """
     Get the most recent application request logs.
-    
+
     This endpoint provides access to the request logs stored in the SQLite database.
     It's useful for debugging and monitoring API activity.
     """
@@ -57,18 +58,18 @@ async def get_request_logs(
 async def get_request_log_detail(request_id: str):
     """
     Get detailed information about a specific request including request and response bodies.
-    
+
     This endpoint is useful for debugging specific API calls by request ID.
     """
     try:
         # Get log with bodies included
         logs = get_app_request_logs(limit=1000, with_body=True)
-        
+
         # Find the specific request
         for log in logs:
             if log.get("request_id") == request_id:
                 return log
-                
+
         # If we get here, log was not found
         raise HTTPException(status_code=404, detail=f"Request log with ID {request_id} not found")
     except HTTPException:
@@ -103,17 +104,17 @@ async def toggle_real_time_logging(enable: bool = Query(None, description="Enabl
     """
     # Import the module with the global variable
     from app.middleware.request_logger import REAL_TIME_LOGGING
-    
+
     # Get the current value if no parameter specified
     if enable is None:
         return {"real_time_logging": REAL_TIME_LOGGING}
-        
+
     # Update the module's global variable
     import sys
     module = sys.modules['app.middleware.request_logger']
     setattr(module, 'REAL_TIME_LOGGING', enable)
-    
+
     return {
         "real_time_logging": enable,
         "message": f"Real-time logging {'enabled' if enable else 'disabled'}"
-    } 
+    }

@@ -3,13 +3,13 @@ Direct logging utility for ensuring requests are logged to SQLite
 without relying on the existing (potentially problematic) logging mechanisms.
 """
 import json
-import sqlite3
 import os
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from app.utils.logger import logger
 from app.config.settings import settings
+from app.utils.logger import logger
 
 # Get SQLite database path from settings or use default
 SQLITE_DB_PATH = settings.API_LOG_SQLITE_PATH or "api_logs.db"
@@ -22,10 +22,10 @@ def ensure_sqlite_table_exists():
         db_dir = Path(SQLITE_DB_PATH).parent
         if not db_dir.exists() and str(db_dir) != ".":
             db_dir.mkdir(parents=True, exist_ok=True)
-        
+
         with sqlite3.connect(SQLITE_DB_PATH) as conn:
             cursor = conn.cursor()
-            
+
             # Use the existing app_requests table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS app_requests (
@@ -48,15 +48,15 @@ def ensure_sqlite_table_exists():
                     timestamp TEXT
                 )
             ''')
-            
+
             # Create indexes for better performance
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_app_request_id ON app_requests(request_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_app_timestamp ON app_requests(timestamp)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_app_endpoint ON app_requests(endpoint)')
-            
+
             conn.commit()
             logger.info(f"SQLite database initialized at {SQLITE_DB_PATH}")
-            
+
         return True
     except Exception as e:
         logger.error(f"Failed to create SQLite table: {str(e)}")
@@ -67,7 +67,7 @@ def ensure_sqlite_table_exists():
 SQLITE_INITIALIZED = ensure_sqlite_table_exists()
 
 
-def log_request_direct(request_id, endpoint, method, path, response, response_body, status_code, client_ip=None, user_agent=None, 
+def log_request_direct(request_id, endpoint, method, path, response, response_body, status_code, client_ip=None, user_agent=None,
                       request_query_params=None, request_body=None, request_headers=None, execution_time_ms=0, error_message=None):
     """
     Log a request directly to SQLite with minimal processing
@@ -75,18 +75,18 @@ def log_request_direct(request_id, endpoint, method, path, response, response_bo
     """
     if not SQLITE_INITIALIZED:
         return False
-    
+
     try:
         # Get response body as text
         response_headers = "{}"
-        
+
         # Get response headers if available
         if response and hasattr(response, "headers"):
             try:
                 response_headers = json.dumps(dict(response.headers))
             except Exception as e:
                 logger.error(f"Error getting response headers: {str(e)}")
-        
+
         # Handle request data
         if request_query_params is None:
             request_query_params = {}
@@ -94,7 +94,7 @@ def log_request_direct(request_id, endpoint, method, path, response, response_bo
             request_body = {}
         if request_headers is None:
             request_headers = {}
-            
+
         # Serialize JSON fields
         try:
             query_params_json = json.dumps(request_query_params)
@@ -107,18 +107,18 @@ def log_request_direct(request_id, endpoint, method, path, response, response_bo
             request_body_json = "{}"
             request_headers_json = "{}"
             response_body = "{}"
-        
-        
+
+
         # Connect to DB and insert record
         with sqlite3.connect(SQLITE_DB_PATH) as conn:
             cursor = conn.cursor()
-            
+
             # Use the existing app_requests table with its required fields
             cursor.execute(
                 '''
                 INSERT INTO app_requests
-                (request_id, endpoint, method, request_path, response_body, status_code, 
-                 client_ip, user_agent, request_query_params, request_body, 
+                (request_id, endpoint, method, request_path, response_body, status_code,
+                 client_ip, user_agent, request_query_params, request_body,
                  request_headers, response_headers, execution_time_ms, error_message, timestamp)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
@@ -142,7 +142,7 @@ def log_request_direct(request_id, endpoint, method, path, response, response_bo
             )
             conn.commit()
             logger.info(f"Successfully logged request to app_requests: {endpoint}")
-            
+
         return True
     except Exception as e:
         logger.error(f"Failed to log request directly: {str(e)}")
@@ -168,12 +168,12 @@ def get_logged_requests(limit=10):
 def get_app_request_logs(limit=10, with_body=False, refresh=True):
     """
     Get app request logs in a more detailed format with optional body content
-    
+
     Args:
         limit: Maximum number of records to return
         with_body: Whether to include request and response bodies
         refresh: Whether to refresh the connection to ensure we get the latest logs
-        
+
     Returns:
         List of dictionaries containing log data
     """
@@ -185,20 +185,20 @@ def get_app_request_logs(limit=10, with_body=False, refresh=True):
                 conn = sqlite3.connect(SQLITE_DB_PATH, uri=True)
             else:
                 conn = sqlite3.connect(SQLITE_DB_PATH)
-                
+
             conn.row_factory = sqlite3.Row  # This enables column access by name
             cursor = conn.cursor()
-            
+
             if with_body:
                 # Get all fields
                 cursor.execute(
                     """
-                    SELECT 
+                    SELECT
                         request_id, endpoint, method, client_ip, user_agent,
                         request_path, request_query_params, request_body,
                         response_body, status_code, execution_time_ms,
                         error_message, timestamp
-                    FROM app_requests 
+                    FROM app_requests
                     ORDER BY id DESC LIMIT ?
                     """,
                     (limit,)
@@ -207,49 +207,49 @@ def get_app_request_logs(limit=10, with_body=False, refresh=True):
                 # Get fields except bodies
                 cursor.execute(
                     """
-                    SELECT 
+                    SELECT
                         request_id, endpoint, method, client_ip, user_agent,
-                        request_path, request_query_params, status_code, 
+                        request_path, request_query_params, status_code,
                         execution_time_ms, error_message, timestamp
-                    FROM app_requests 
+                    FROM app_requests
                     ORDER BY id DESC LIMIT ?
                     """,
                     (limit,)
                 )
-            
+
             # Convert to list of dicts
             rows = cursor.fetchall()
             result = []
-            
+
             for row in rows:
                 row_dict = dict(row)
-                
+
                 # Parse JSON strings
                 if 'request_query_params' in row_dict and row_dict['request_query_params']:
                     try:
                         row_dict['request_query_params'] = json.loads(row_dict['request_query_params'])
                     except:
                         pass
-                
+
                 if with_body:
                     if 'request_body' in row_dict and row_dict['request_body']:
                         try:
                             row_dict['request_body'] = json.loads(row_dict['request_body'])
                         except:
                             pass
-                        
+
                     if 'response_body' in row_dict and row_dict['response_body']:
                         try:
                             row_dict['response_body'] = json.loads(row_dict['response_body'])
                         except:
                             pass
-                
+
                 result.append(row_dict)
         finally:
             if conn:
                 conn.close()
-                
+
         return result
     except Exception as e:
         logger.error(f"Failed to get app request logs: {str(e)}")
-        return [] 
+        return []

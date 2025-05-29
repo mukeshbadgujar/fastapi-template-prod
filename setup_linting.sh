@@ -80,10 +80,8 @@ repos:
     hooks:
     -   id: isort
 
--   repo: https://github.com/psf/black
-    rev: 23.3.0
-    hooks:
-    -   id: black
+# Black formatter removed to prevent automatic code reformatting
+# You can still run it manually with: black .
 
 -   repo: https://github.com/pycqa/flake8
     rev: 6.0.0

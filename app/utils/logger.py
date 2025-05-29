@@ -6,166 +6,282 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+import structlog
+from structlog.contextvars import bind_contextvars, clear_contextvars, get_contextvars
+
 from app.config.settings import settings
 
+# ANSI color codes for console output
+COLORS = {
+    "DEBUG": "\033[36m",    # Cyan
+    "INFO": "\033[32m",     # Green
+    "WARNING": "\033[33m",  # Yellow
+    "ERROR": "\033[31m",    # Red
+    "CRITICAL": "\033[35m", # Magenta
+    "RESET": "\033[0m"      # Reset
+}
 
-class JSONFormatter(logging.Formatter):
+
+class ColorizedJSONFormatter(logging.Formatter):
     """
-    Custom JSON formatter for structured logging
+    Enhanced JSON formatter with optional console colorization
     """
+
+    def __init__(self, enable_color: bool = True, pretty_print: bool = False):
+        super().__init__()
+        self.enable_color = enable_color
+        self.pretty_print = pretty_print
+
     def format(self, record: logging.LogRecord) -> str:
-        """
-        Format the log record as a JSON string
-        """
-        timestamp = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Extract request_id if available
-        request_id = getattr(record, "request_id", str(uuid.uuid4()))
-        
-        # Extract partner_journey_id if available
-        partner_journey_id = getattr(record, "partner_journey_id", "")
-        
-        # Extract account_id if available
-        account_id = getattr(record, "account_id", "")
-        
-        # Extract application_id if available
-        application_id = getattr(record, "application_id", "")
-        
-        # Create the JSON log object with standard fields
+        """Format the log record as JSON with optional colorization"""
+
+        # Create base log object
         log_object = {
-            "asctime": timestamp,
-            "levelname": record.levelname,
-            "name": record.name,
-            "filename": record.filename,
-            "funcName": record.funcName,
-            "lineno": record.lineno,
+            "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno,
             "message": record.getMessage(),
-            "request_id": request_id
         }
-        
-        # Add optional fields if they have values
-        if partner_journey_id:
-            log_object["partner_journey_id"] = partner_journey_id
-        
-        if account_id:
-            log_object["account_id"] = account_id
-            
-        if application_id:
-            log_object["application_id"] = application_id
-        
-        # Check if exception info exists
+
+        # Add correlation ID if available
+        correlation_id = getattr(record, "correlation_id", None)
+        if correlation_id:
+            log_object["correlation_id"] = correlation_id
+
+        # Add other context fields
+        for field in ["request_id", "account_id", "partner_journey_id", "application_id"]:
+            value = getattr(record, field, None)
+            if value:
+                log_object[field] = value
+
+        # Add exception info if present
         if record.exc_info:
-            exception_type, exception_value, exception_tb = record.exc_info
+            exc_type, exc_value, exc_tb = record.exc_info
             log_object["exception"] = {
-                "type": exception_type.__name__,
-                "message": str(exception_value),
-                "traceback": traceback.format_exception(exception_type, exception_value, exception_tb)
+                "type": exc_type.__name__,
+                "message": str(exc_value),
+                "traceback": traceback.format_exception(exc_type, exc_value, exc_tb)
             }
-        
-        # Add extra fields from record.__dict__
+
+        # Add extra fields from the record
+        extra_fields = {}
+        skip_fields = {
+            "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
+            "module", "lineno", "funcName", "created", "msecs", "relativeCreated",
+            "thread", "threadName", "processName", "process", "getMessage",
+            "exc_info", "exc_text", "stack_info", "correlation_id", "request_id",
+            "account_id", "partner_journey_id", "application_id", "message"
+        }
+
         for key, value in record.__dict__.items():
-            if key not in ["args", "asctime", "created", "exc_info", "exc_text", "filename", 
-                          "funcName", "levelname", "levelno", "lineno", "module", 
-                          "msecs", "message", "msg", "name", "pathname", "process", 
-                          "processName", "relativeCreated", "stack_info", "thread", "threadName",
-                          "request_id", "partner_journey_id", "account_id", "application_id"]:
+            if key not in skip_fields:
                 if isinstance(value, (str, int, float, bool, type(None), list, dict)):
-                    log_object[key] = value
+                    extra_fields[key] = value
                 else:
-                    # Convert non-serializable objects to string
                     try:
-                        log_object[key] = str(value)
-                    except:
-                        log_object[key] = "Non-serializable object"
-        
-        return json.dumps(log_object)
+                        extra_fields[key] = str(value)
+                    except Exception:
+                        extra_fields[key] = "Non-serializable object"
+
+        if extra_fields:
+            log_object["extra"] = extra_fields
+
+        # Format as JSON
+        if self.pretty_print:
+            json_str = json.dumps(log_object, indent=2, ensure_ascii=False)
+        else:
+            json_str = json.dumps(log_object, ensure_ascii=False, separators=(',', ':'))
+
+        # Apply colorization if enabled
+        if self.enable_color and record.levelname in COLORS:
+            color = COLORS[record.levelname]
+            reset = COLORS["RESET"]
+            return f"{color}{json_str}{reset}"
+
+        return json_str
 
 
-class CustomLogger(logging.Logger):
+class PrettyFormatter(logging.Formatter):
     """
-    Custom logger class with additional context fields
+    Human-readable formatter with colorization
     """
-    def __init__(self, name: str, level: int = logging.NOTSET):
-        super().__init__(name, level)
-        self.request_id = None
-        self.partner_journey_id = None
-        self.account_id = None
-        self.application_id = None
-    
-    def _log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1):
-        """
-        Override _log to add request_id and other context fields
-        """
-        if extra is None:
-            extra = {}
-        
-        # Add context fields if they're set and not in extra
-        if hasattr(self, 'request_id') and self.request_id and 'request_id' not in extra:
-            extra['request_id'] = self.request_id
-            
-        if hasattr(self, 'partner_journey_id') and self.partner_journey_id and 'partner_journey_id' not in extra:
-            extra['partner_journey_id'] = self.partner_journey_id
-            
-        if hasattr(self, 'account_id') and self.account_id and 'account_id' not in extra:
-            extra['account_id'] = self.account_id
-            
-        if hasattr(self, 'application_id') and self.application_id and 'application_id' not in extra:
-            extra['application_id'] = self.application_id
-        
-        super()._log(level, msg, args, exc_info, extra, stack_info, stacklevel)
-    
-    def set_context(self, 
-                    request_id: Optional[str] = None, 
-                    partner_journey_id: Optional[str] = None,
-                    account_id: Optional[str] = None,
-                    application_id: Optional[str] = None):
-        """
-        Set context fields for all subsequent log messages
-        """
-        if request_id:
-            self.request_id = request_id
-            
-        if partner_journey_id:
-            self.partner_journey_id = partner_journey_id
-            
-        if account_id:
-            self.account_id = account_id
-            
-        if application_id:
-            self.application_id = application_id
+
+    def __init__(self, enable_color: bool = True):
+        super().__init__()
+        self.enable_color = enable_color
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format the log record in a human-readable way"""
+
+        timestamp = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
+
+        # Base format
+        base_msg = f"[{timestamp}] {record.levelname:8} {record.name}:{record.lineno} - {record.getMessage()}"
+
+        # Add correlation ID if available
+        correlation_id = getattr(record, "correlation_id", None)
+        if correlation_id:
+            base_msg += f" [correlation_id={correlation_id}]"
+
+        # Add exception info if present
+        if record.exc_info:
+            base_msg += "\n" + self.formatException(record.exc_info)
+
+        # Apply colorization if enabled
+        if self.enable_color and record.levelname in COLORS:
+            color = COLORS[record.levelname]
+            reset = COLORS["RESET"]
+            return f"{color}{base_msg}{reset}"
+
+        return base_msg
 
 
-# Register our custom logger class
-logging.setLoggerClass(CustomLogger)
-
-
-def setup_logger(name: str = "app", level: int = logging.INFO) -> CustomLogger:
+class CorrelationLogger:
     """
-    Setup a logger with handlers and formatters
-    
+    Enhanced logger with correlation ID support and centralized configuration
+    """
+
+    def __init__(self, name: str = "app"):
+        self.name = name
+        self._logger = logging.getLogger(name)
+        self._setup_logger()
+
+    def _setup_logger(self):
+        """Setup logger with appropriate formatter based on configuration"""
+
+        # Clear any existing handlers
+        self._logger.handlers.clear()
+
+        # Set log level
+        log_level = getattr(logging, settings.LOG_LEVEL)
+        self._logger.setLevel(log_level)
+
+        # Create console handler
+        console_handler = logging.StreamHandler(sys.stdout)
+
+        # Choose formatter based on configuration
+        if settings.LOG_FORMAT == "json" or not settings.LOG_PRETTY:
+            formatter = ColorizedJSONFormatter(
+                enable_color=settings.LOG_COLOR,
+                pretty_print=settings.LOG_PRETTY and settings.LOG_FORMAT == "json"
+            )
+        else:
+            formatter = PrettyFormatter(enable_color=settings.LOG_COLOR)
+
+        console_handler.setFormatter(formatter)
+        self._logger.addHandler(console_handler)
+
+        # Prevent propagation to root logger
+        self._logger.propagate = False
+
+    def _log(self, level: int, msg: str, *args, **kwargs):
+        """Internal logging method that adds correlation context"""
+
+        # Extract extra fields for correlation context
+        extra = kwargs.pop('extra', {})
+
+        # Try to get correlation ID from context variables (set by middleware)
+        try:
+            context = get_contextvars()
+            correlation_id = context.get('correlation_id')
+            if correlation_id:
+                extra['correlation_id'] = correlation_id
+
+            # Add any additional context
+            for key in ['request_id', 'account_id', 'partner_journey_id', 'application_id']:
+                value = context.get(key)
+                if value:
+                    extra[key] = value
+        except Exception:
+            # If structlog context is not available, continue without it
+            pass
+
+        kwargs['extra'] = extra
+        self._logger._log(level, msg, args, **kwargs)
+
+    def debug(self, msg: str, *args, **kwargs):
+        """Log debug message"""
+        self._log(logging.DEBUG, msg, *args, **kwargs)
+
+    def info(self, msg: str, *args, **kwargs):
+        """Log info message"""
+        self._log(logging.INFO, msg, *args, **kwargs)
+
+    def warning(self, msg: str, *args, **kwargs):
+        """Log warning message"""
+        self._log(logging.WARNING, msg, *args, **kwargs)
+
+    def error(self, msg: str, *args, **kwargs):
+        """Log error message"""
+        self._log(logging.ERROR, msg, *args, **kwargs)
+
+    def critical(self, msg: str, *args, **kwargs):
+        """Log critical message"""
+        self._log(logging.CRITICAL, msg, *args, **kwargs)
+
+    def exception(self, msg: str, *args, **kwargs):
+        """Log exception with traceback"""
+        kwargs['exc_info'] = True
+        self.error(msg, *args, **kwargs)
+
+    def set_context(self, **context):
+        """Set context for all subsequent log messages in this thread/task"""
+        bind_contextvars(**context)
+
+    def clear_context(self):
+        """Clear all context variables"""
+        clear_contextvars()
+
+
+# Create the centralized logger instance
+logger = CorrelationLogger(name="app")
+
+
+def get_logger(name: str = "app") -> CorrelationLogger:
+    """
+    Get a logger instance with correlation support
+
     Args:
         name: Logger name
-        level: Logging level
-        
+
     Returns:
-        A configured logger instance
+        CorrelationLogger instance
     """
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-    
-    # Create console handler with JSON formatter
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(JSONFormatter())
-    
-    # Add handler to logger if it doesn't already have one
-    if not logger.handlers:
-        logger.addHandler(console_handler)
-    
-    # Make sure logger doesn't propagate to root logger
-    logger.propagate = False
-    
-    return logger
+    return CorrelationLogger(name=name)
 
 
-# Create a default logger instance
-logger = setup_logger(level=logging.DEBUG if settings.DEBUG else logging.INFO)
+# Correlation ID utilities
+def generate_correlation_id() -> str:
+    """Generate a new correlation ID"""
+    return str(uuid.uuid4())
+
+
+def get_correlation_id() -> Optional[str]:
+    """Get the current correlation ID from context"""
+    try:
+        return get_contextvars().get('correlation_id')
+    except Exception:
+        return None
+
+
+def set_correlation_id(correlation_id: str):
+    """Set correlation ID in context"""
+    bind_contextvars(correlation_id=correlation_id)
+
+
+# Legacy compatibility function
+def setup_logger(name: str = "app", level: int = logging.INFO) -> CorrelationLogger:
+    """
+    Legacy function for backward compatibility
+
+    Args:
+        name: Logger name
+        level: Logging level (ignored - uses settings)
+
+    Returns:
+        CorrelationLogger instance
+    """
+    return get_logger(name)

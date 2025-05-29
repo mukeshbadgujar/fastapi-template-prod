@@ -8,16 +8,16 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import httpx
 from botocore.exceptions import ClientError
-from circuitbreaker import CircuitBreaker, circuit
+from circuitbreaker import CircuitBreaker, CircuitBreakerError, circuit
 from fastapi import status
 from httpx import AsyncClient, RequestError, Response, Timeout
 from pydantic import BaseModel, SecretStr
 
-from app.common.exceptions import ExternalAPIException, ServiceUnavailableException
-from app.models.models_request_response import ApiStatus, ApiCallLog
-from app.config.settings import settings
-from app.utils.logger import logger
 from app.common.db_logging.factory import DBLoggerFactory
+from app.common.exceptions import ExternalAPIException, ServiceUnavailableException
+from app.config.settings import settings
+from app.models.models_request_response import ApiCallLog, ApiStatus
+from app.utils.logger import get_correlation_id, logger
 
 
 # Circuit breaker configuration
@@ -27,13 +27,13 @@ class CircuitConfig:
     """
     # Number of failed executions before opening the circuit
     FAILURE_THRESHOLD: int = 5
-    
+
     # Number of successful executions before closing the circuit
     SUCCESS_THRESHOLD: int = 2
-    
+
     # Time to wait before transitioning from open to half-open
     TIMEOUT_SECONDS: int = 30
-    
+
     # List of exceptions that don't count as failures
     EXCLUDED_EXCEPTIONS: List[Exception] = []
 
@@ -43,7 +43,7 @@ class CircuitConfig:
 class ApiClientConfig:
     """
     API client configuration
-    
+
     This class stores all the configurations needed for an API client.
     """
     # Base URL for the API (required)
@@ -51,621 +51,587 @@ class ApiClientConfig:
 
     # Default headers to use for all requests
     headers: Dict[str, str] = field(default_factory=dict)
-    
+
     # Default timeout for all requests (in seconds)
     timeout: float = 30.0
-    
+
     # Allow redirects
     follow_redirects: bool = True
-    
+
     # Vendor name for logging
     vendor: str = "unknown"
-    
+
     # Custom certificate path or content
     cert: Optional[Union[str, Tuple[str, str]]] = None
-    
+
     # Verify SSL
     verify: bool = True
-    
+
     # API key for authentication
     api_key: Optional[Union[str, SecretStr]] = None
-    
+
     # API key header name
     api_key_header: Optional[str] = None
-    
+
     # API key query parameter name
     api_key_query: Optional[str] = None
-    
+
     # Username for basic auth
     auth_username: Optional[Union[str, SecretStr]] = None
-    
+
     # Password for basic auth
     auth_password: Optional[Union[str, SecretStr]] = None
-    
+
     # Default query parameters
     default_params: Dict[str, str] = field(default_factory=dict)
-    
+
     # Circuit breaker configuration
     circuit_config: CircuitConfig = field(default_factory=CircuitConfig)
-    
+
     # Fallback configuration
     fallback_config: Optional['ApiClientConfig'] = None
 
 
-class ApiClient:
+class CorrelationHTTPClient:
     """
-    Reusable HTTP client for making API calls with circuit breaker pattern,
-    logging, and fallback mechanism.
+    Enhanced HTTP client with automatic correlation ID propagation and logging
     """
-    def __init__(self, config: ApiClientConfig):
+
+    def __init__(
+        self,
+        base_url: str,
+        vendor: str = "unknown",
+        api_key: Optional[str] = None,
+        api_key_header: str = "X-API-Key",
+        timeout: int = 30,
+        max_retries: int = 3,
+        circuit_breaker_failure_threshold: int = 5,
+        circuit_breaker_recovery_timeout: int = 30,
+        propagate_correlation: bool = True,
+    ):
         """
-        Initialize API client with configuration
-        
+        Initialize the correlation-aware HTTP client
+
         Args:
-            config: API client configuration
+            base_url: Base URL for the API
+            vendor: Vendor/service name for logging
+            api_key: API key for authentication
+            api_key_header: Header name for API key
+            timeout: Request timeout in seconds
+            max_retries: Maximum number of retries
+            circuit_breaker_failure_threshold: Number of failures before circuit opens
+            circuit_breaker_recovery_timeout: Time to wait before trying again
+            propagate_correlation: Whether to automatically propagate correlation IDs
         """
-        self.config = config
-        self._client = None
-        self._logger_factory = DBLoggerFactory()
-        
+        self.base_url = base_url.rstrip("/")
+        self.vendor = vendor
+        self.api_key = api_key
+        self.api_key_header = api_key_header
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.propagate_correlation = propagate_correlation
+
         # Setup circuit breaker
-        self._circuit_breaker = CircuitBreaker(
-            failure_threshold=config.circuit_config.FAILURE_THRESHOLD,
-            recovery_timeout=config.circuit_config.TIMEOUT_SECONDS,
-            expected_exception=RequestError,
-            name=f"circuit-{config.vendor}"
+        self._circuit_breaker = circuit(
+            failure_threshold=circuit_breaker_failure_threshold,
+            recovery_timeout=circuit_breaker_recovery_timeout,
+            expected_exception=(httpx.HTTPError, httpx.TimeoutException)
+        )(self._make_request)
+
+        # Create HTTP client
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(timeout),
+            follow_redirects=True,
         )
-    
-    async def _log_api_call(self, log_data: ApiCallLog):
-        """Log API call using available loggers"""
-        await self._logger_factory.log_api_call(log_data)
-    
-    async def close(self):
-        """Close all clients and connections"""
-        if self._client:
-            await self._client.aclose()
-            self._client = None
-        
-        await self._logger_factory.close()
-    
-    async def _get_client(self) -> AsyncClient:
-        """
-        Get or create HTTP client
-        
-        Returns:
-            AsyncClient: HTTPX async client
-        """
-        if self._client is None:
-            auth = None
-            
-            # Setup basic auth if credentials are provided
-            if self.config.auth_username and self.config.auth_password:
-                username = self.config.auth_username
-                password = self.config.auth_password
-                
-                # Handle SecretStr
-                if isinstance(username, SecretStr):
-                    username = username.get_secret_value()
-                if isinstance(password, SecretStr):
-                    password = password.get_secret_value()
-                    
-                auth = (username, password)
-            
-            # Setup client with config
-            self._client = AsyncClient(
-                base_url=self.config.base_url,
-                headers=self.config.headers.copy(),
-                timeout=Timeout(timeout=self.config.timeout),
-                follow_redirects=self.config.follow_redirects,
-                cert=self.config.cert,
-                verify=self.config.verify,
-                auth=auth
-            )
-            
-        return self._client
-    
-    @circuit(expected_exception=RequestError)
+
     async def request(
         self,
         method: str,
         endpoint: str,
         data: Optional[Dict[str, Any]] = None,
-        json_data: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        request_id: Optional[str] = None,
-        partner_journey_id: Optional[str] = None,
         account_id: Optional[str] = None,
-        application_id: Optional[str] = None
+        partner_journey_id: Optional[str] = None,
+        **kwargs
     ) -> Tuple[Dict[str, Any], Dict[str, str], int]:
         """
-        Make HTTP request with circuit breaker pattern and logging
-        
+        Make an HTTP request with correlation tracking and comprehensive logging
+
         Args:
-            method: HTTP method (GET, POST, PUT, DELETE, etc.)
-            endpoint: URL endpoint (will be appended to base_url)
-            data: Form data for request
-            json_data: JSON data for request
+            method: HTTP method (GET, POST, etc.)
+            endpoint: API endpoint path
+            data: Request body data
             params: Query parameters
-            headers: Headers for request
-            request_id: Request ID for logging
-            partner_journey_id: Partner journey ID for logging
-            account_id: Account ID for logging
-            application_id: Application ID for logging
-            
+            headers: Additional headers
+            account_id: Account ID for logging context
+            partner_journey_id: Partner journey ID for logging context
+            **kwargs: Additional arguments for httpx
+
         Returns:
             Tuple of (response_data, response_headers, status_code)
-            
-        Raises:
-            ExternalAPIException: On API error
-            ServiceUnavailableException: On circuit open
         """
-        # Generate request ID if not provided
-        if not request_id:
-            request_id = str(uuid.uuid4())
-        
-        # Get HTTP client
-        client = await self._get_client()
-        
-        # Merge headers
-        merged_headers = self.config.headers.copy()
+
+        # Prepare URL
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+
+        # Prepare headers
+        request_headers = {}
+        if self.api_key:
+            request_headers[self.api_key_header] = self.api_key
+
+        # Add correlation headers if enabled
+        if self.propagate_correlation:
+            correlation_id = get_correlation_id()
+            if correlation_id:
+                request_headers[settings.CORRELATION_ID_HEADER] = correlation_id
+                request_headers["X-Request-ID"] = correlation_id
+
+        # Merge with provided headers
         if headers:
-            merged_headers.update(headers)
-            
-        # Add API key if configured
-        if self.config.api_key:
-            api_key = self.config.api_key
-            if isinstance(api_key, SecretStr):
-                api_key = api_key.get_secret_value()
-                
-            if self.config.api_key_header:
-                merged_headers[self.config.api_key_header] = api_key
-            elif self.config.api_key_query:
-                if not params:
-                    params = {}
-                params[self.config.api_key_query] = api_key
-        
-        # Merge query parameters
-        merged_params = self.config.default_params.copy()
-        if params:
-            merged_params.update(params)
-            
-        # URL with base_url and endpoint
-        url = endpoint
-        
+            request_headers.update(headers)
+
+        # Set logging context for this call
+        call_context = {
+            "vendor": self.vendor,
+            "endpoint": endpoint,
+            "method": method.upper(),
+            "url": url,
+        }
+
+        if account_id:
+            call_context["account_id"] = account_id
+            logger.set_context(account_id=account_id)
+
+        if partner_journey_id:
+            call_context["partner_journey_id"] = partner_journey_id
+            logger.set_context(partner_journey_id=partner_journey_id)
+
         # Start timing
         start_time = time.time()
-        
-        
-        # Log request
-        log_data = ApiCallLog(
-            request_id=request_id,
-            endpoint=url,
-            method=method.upper(),
-            partner_journey_id=partner_journey_id,
-            account_id=account_id,
-            application_id=application_id,
-            request_body=json_data if json_data else data or params,
-            request_headers={k: "***" if k.lower() in ["authorization", "x-api-key", "apikey"] else v
-                             for k, v in merged_headers.items()},
-            status=ApiStatus.FAILURE,
-            execution_time_ms=0,
-            vendor=self.config.vendor
+
+        # Log outgoing request
+        logger.info(
+            f"Outgoing {method.upper()} request to {self.vendor}",
+            extra={
+                "event_type": "external_api_request_start",
+                "vendor": self.vendor,
+                "method": method.upper(),
+                "url": url,
+                "endpoint": endpoint,
+                "request_data": self._sanitize_data(data),
+                "query_params": params,
+                "headers": self._sanitize_headers(request_headers),
+            }
         )
-        
+
         try:
-            # Handle circuit open
-            if self._circuit_breaker.state == 'open':
-                raise ServiceUnavailableException(
-                    detail=f"Circuit open for {self.config.vendor} API"
-                )
-                
-            # Make request with proper method
-            response = await client.request(
-                method=method.upper(),
+            # Make the request with circuit breaker protection
+            response_data, response_headers, status_code = await self._circuit_breaker(
+                method=method,
                 url=url,
                 data=data,
-                json=json_data,
-                params=merged_params,
-                headers=merged_headers
+                params=params,
+                headers=request_headers,
+                **kwargs
             )
-            
+
             # Calculate execution time
-            execution_time = time.time() - start_time
-            
-            # Try to parse JSON response
-            try:
-                response_data = response.json()
-            except Exception:
-                # If not JSON, use text as response
-                response_data = {"response_text": response.text}
-            
-            # Get response headers
-            response_headers = dict(response.headers)
-            
-            # Update log data
-            log_data.status_code = response.status_code
-            log_data.response_headers = response_headers
-            log_data.response_body = response_data
-            log_data.execution_time_ms = round(execution_time * 1000, 2)
-            
-            # Check if successful response
-            if 200 <= response.status_code < 300:
-                log_data.status = ApiStatus.SUCCESS
-                
-                # Log API call
-                await self._log_api_call(log_data)
-                
-                # Return response data, headers, and status code
-                return response_data, response_headers, response.status_code
-            else:
-                # Error response
-                error_message = f"API error: {response.status_code} - {response.text}"
-                log_data.error_message = error_message
-                
-                # Log API call
-                await self._log_api_call(log_data)
-                
-                # Raise exception
-                raise ExternalAPIException(
-                    detail=error_message,
-                    service_name=self.config.vendor,
-                    status_code=response.status_code,
-                    response_data=response_data
-                )
-                
-        except (RequestError, asyncio.TimeoutError, ServiceUnavailableException) as e:
-            # Request error (network issue, timeout, etc.)
-            execution_time = time.time() - start_time
-            error_message = f"API request failed: {str(e)}"
-            
-            # Update log data
-            log_data.error_message = error_message
-            log_data.execution_time_ms = round(execution_time * 1000, 2)
-            
-            # Log API call
-            await self._log_api_call(log_data)
-            
-            # Try fallback if configured
-            if self.config.fallback_config:
-                logger.warning(
-                    f"Using fallback for {self.config.vendor} API call to {endpoint}",
-                    extra={"error": str(e)}
-                )
-                
-                # Create fallback client
-                fallback_client = ApiClient(self.config.fallback_config)
-                
-                try:
-                    # Make fallback request
-                    response_data, response_headers, status_code = await fallback_client.request(
-                        method=method,
-                        endpoint=endpoint,
-                        data=data,
-                        json_data=json_data,
-                        params=params,
-                        headers=headers,
-                        request_id=request_id,
-                        partner_journey_id=partner_journey_id,
-                        account_id=account_id,
-                        application_id=application_id
-                    )
-                    
-                    # Update log with fallback info
-                    fallback_log = ApiCallLog(
-                        request_id=request_id,
-                        endpoint=url,
-                        method=method.upper(),
-                        partner_journey_id=partner_journey_id,
-                        account_id=account_id,
-                        application_id=application_id,
-                        request_body=json_data if json_data else data,
-                        request_headers={k: "***" if k.lower() in ["authorization", "x-api-key", "apikey"] else v
-                                        for k, v in merged_headers.items()},
-                        status=ApiStatus.SUCCESS,
-                        execution_time_ms=log_data.execution_time_ms,
-                        vendor=f"{self.config.vendor}_fallback",
-                        fallback_used=True,
-                        response_body=response_data,
-                        response_headers=response_headers,
-                        status_code=status_code
-                    )
-                    
-                    # Log fallback API call
-                    await self._log_api_call(fallback_log)
-                    
-                    # Close fallback client
-                    await fallback_client.close()
-                    
-                    # Return fallback response
-                    return response_data, response_headers, status_code
-                    
-                except Exception as fallback_error:
-                    # Close fallback client
-                    await fallback_client.close()
-                    
-                    # Re-raise original error
-                    raise ServiceUnavailableException(
-                        detail=f"API and fallback request failed: {str(e)} / Fallback error: {str(fallback_error)}"
-                    )
-            
-            # No fallback or fallback failed
-            raise ServiceUnavailableException(
-                detail=f"API request failed: {str(e)}"
+            execution_time_ms = round((time.time() - start_time) * 1000, 2)
+
+            # Log successful response
+            logger.info(
+                f"Received response from {self.vendor} - {status_code}",
+                extra={
+                    "event_type": "external_api_request_complete",
+                    "vendor": self.vendor,
+                    "method": method.upper(),
+                    "url": url,
+                    "endpoint": endpoint,
+                    "status_code": status_code,
+                    "execution_time_ms": execution_time_ms,
+                    "response_data": self._sanitize_data(response_data),
+                    "response_headers": self._sanitize_headers(response_headers),
+                }
             )
-            
+
+            # Log to database for internal API tracking
+            await self._log_to_database(
+                vendor=self.vendor,
+                method=method.upper(),
+                url=url,
+                endpoint=endpoint,
+                request_data=data,
+                request_params=params,
+                request_headers=request_headers,
+                response_data=response_data,
+                response_headers=response_headers,
+                status_code=status_code,
+                execution_time_ms=execution_time_ms,
+                account_id=account_id,
+                partner_journey_id=partner_journey_id,
+            )
+
+            return response_data, response_headers, status_code
+
+        except CircuitBreakerError as e:
+            execution_time_ms = round((time.time() - start_time) * 1000, 2)
+
+            logger.error(
+                f"Circuit breaker open for {self.vendor}",
+                extra={
+                    "event_type": "external_api_circuit_breaker",
+                    "vendor": self.vendor,
+                    "method": method.upper(),
+                    "url": url,
+                    "endpoint": endpoint,
+                    "execution_time_ms": execution_time_ms,
+                    "error": str(e),
+                }
+            )
+            raise
+
         except Exception as e:
-            # Other exceptions
-            execution_time = time.time() - start_time
-            error_message = f"API exception: {str(e)}"
-            
-            # Update log data
-            log_data.error_message = error_message
-            log_data.execution_time_ms = round(execution_time * 1000, 2)
-            
-            # Log API call
-            await self._log_api_call(log_data)
-            
-            # Raise exception
-            raise ExternalAPIException(
-                detail=error_message,
-                service_name=self.config.vendor
+            execution_time_ms = round((time.time() - start_time) * 1000, 2)
+
+            logger.error(
+                f"Request to {self.vendor} failed: {str(e)}",
+                extra={
+                    "event_type": "external_api_request_error",
+                    "vendor": self.vendor,
+                    "method": method.upper(),
+                    "url": url,
+                    "endpoint": endpoint,
+                    "execution_time_ms": execution_time_ms,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                }
+            )
+            raise
+
+    async def _make_request(
+        self,
+        method: str,
+        url: str,
+        data: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs
+    ) -> Tuple[Dict[str, Any], Dict[str, str], int]:
+        """
+        Internal method to make the actual HTTP request
+        """
+
+        # Prepare request body
+        json_data = None
+        if data is not None:
+            json_data = data
+
+        # Make the request
+        response = await self._client.request(
+            method=method,
+            url=url,
+            json=json_data,
+            params=params,
+            headers=headers,
+            **kwargs
+        )
+
+        # Parse response
+        try:
+            response_data = response.json() if response.content else {}
+        except json.JSONDecodeError:
+            response_data = {"raw_content": response.text}
+
+        response_headers = dict(response.headers)
+
+        # Raise for HTTP errors
+        response.raise_for_status()
+
+        return response_data, response_headers, response.status_code
+
+    def _sanitize_data(self, data: Any) -> Any:
+        """Sanitize data for logging (remove sensitive information)"""
+
+        if not data:
+            return data
+
+        if isinstance(data, dict):
+            sanitized = {}
+            sensitive_keys = {
+                'password', 'secret', 'token', 'api_key', 'authorization',
+                'credit_card', 'ssn', 'social_security', 'bank_account'
+            }
+
+            for key, value in data.items():
+                if any(sensitive in key.lower() for sensitive in sensitive_keys):
+                    sanitized[key] = "***REDACTED***"
+                elif isinstance(value, dict):
+                    sanitized[key] = self._sanitize_data(value)
+                else:
+                    sanitized[key] = value
+
+            return sanitized
+
+        return data
+
+    def _sanitize_headers(self, headers: Dict[str, str]) -> Dict[str, str]:
+        """Sanitize headers for logging"""
+
+        if not headers:
+            return headers
+
+        sanitized = {}
+        sensitive_headers = {
+            'authorization', 'x-api-key', 'api-key', 'token', 'cookie'
+        }
+
+        for key, value in headers.items():
+            if key.lower() in sensitive_headers:
+                sanitized[key] = "***REDACTED***"
+            else:
+                sanitized[key] = value
+
+        return sanitized
+
+    async def _log_to_database(self, **log_data):
+        """Log internal API call to database using the pluggable backend"""
+
+        try:
+            # Import here to avoid circular imports
+            from app.core.logging_backend import log_internal_api_call
+
+            # Generate unique call ID for this specific API call
+            call_id = str(uuid.uuid4())
+
+            # Get correlation ID from current context
+            correlation_id = get_correlation_id()
+
+            # Prepare log data for database storage
+            db_log_data = {
+                "correlation_id": correlation_id,
+                "parent_request_id": correlation_id,  # Same as correlation for now
+                "call_id": call_id,
+                "timestamp": datetime.utcnow(),
+                "vendor": log_data.get("vendor"),
+                "method": log_data.get("method"),
+                "url": log_data.get("url"),
+                "endpoint": log_data.get("endpoint"),
+                "request_data": self._sanitize_data(log_data.get("request_data")),
+                "request_params": log_data.get("request_params"),
+                "request_headers": self._sanitize_headers(log_data.get("request_headers", {})),
+                "status_code": log_data.get("status_code"),
+                "response_data": self._sanitize_data(log_data.get("response_data")),
+                "response_headers": self._sanitize_headers(log_data.get("response_headers", {})),
+                "execution_time_ms": log_data.get("execution_time_ms"),
+                "account_id": log_data.get("account_id"),
+                "partner_journey_id": log_data.get("partner_journey_id"),
+                "application_id": log_data.get("application_id"),
+                "error_message": None,
+                "error_type": None,
+                "circuit_breaker_open": False,
+                "fallback_used": False,
+            }
+
+            # Log to database
+            success = await log_internal_api_call(**db_log_data)
+
+            if success:
+                logger.debug(
+                    "Internal API call logged to database successfully",
+                    extra={
+                        "event_type": "internal_api_db_log_success",
+                        "table": settings.INT_API_LOG_TABLE,
+                        "correlation_id": correlation_id,
+                        "vendor": log_data.get("vendor"),
+                        "call_id": call_id,
+                    }
+                )
+            else:
+                logger.warning(
+                    "Failed to log internal API call to database",
+                    extra={
+                        "event_type": "internal_api_db_log_failure",
+                        "table": settings.INT_API_LOG_TABLE,
+                        "correlation_id": correlation_id,
+                        "vendor": log_data.get("vendor"),
+                    }
+                )
+
+        except Exception as e:
+            logger.error(
+                f"Exception while logging internal API call to database: {e}",
+                extra={
+                    "event_type": "internal_api_db_log_exception",
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "correlation_id": get_correlation_id(),
+                    "vendor": log_data.get("vendor"),
+                }
             )
 
+    async def close(self):
+        """Close the HTTP client"""
+        await self._client.aclose()
 
-# Helper functions to create API clients
-def create_api_client(
+
+# Factory functions for backward compatibility and ease of use
+def create_correlation_client(
     base_url: str,
     vendor: str = "unknown",
-    headers: Optional[Dict[str, str]] = None,
-    timeout: float = 30.0,
     api_key: Optional[str] = None,
-    api_key_header: Optional[str] = None,
-    cert: Optional[Union[str, Tuple[str, str]]] = None,
-    verify: bool = True,
-    auth_username: Optional[str] = None,
-    auth_password: Optional[str] = None,
-    fallback_config: Optional[ApiClientConfig] = None
-) -> ApiClient:
+    api_key_header: str = "X-API-Key",
+    **kwargs
+) -> CorrelationHTTPClient:
     """
-    Create an API client with configuration
-    
+    Create a correlation-aware HTTP client
+
     Args:
         base_url: Base URL for the API
-        vendor: Vendor name for logging
-        headers: Headers for all requests
-        timeout: Timeout for all requests
+        vendor: Vendor/service name
         api_key: API key for authentication
         api_key_header: Header name for API key
-        cert: Certificate path or content
-        verify: Verify SSL
-        auth_username: Username for basic auth
-        auth_password: Password for basic auth
-        fallback_config: Fallback configuration for circuit breaker
-        
+        **kwargs: Additional client options
+
     Returns:
-        ApiClient: Configured API client
+        CorrelationHTTPClient instance
     """
-    config = ApiClientConfig(
+    return CorrelationHTTPClient(
         base_url=base_url,
-        headers=headers or {},
-        timeout=timeout,
         vendor=vendor,
-        cert=cert,
-        verify=verify,
         api_key=api_key,
         api_key_header=api_key_header,
-        auth_username=auth_username,
-        auth_password=auth_password,
-        fallback_config=fallback_config
-    )
-    
-    return ApiClient(config)
-
-
-def create_fallback_config(
-    base_url: str,
-    vendor: str = "fallback",
-    headers: Optional[Dict[str, str]] = None,
-    timeout: float = 30.0,
-    api_key: Optional[str] = None,
-    api_key_header: Optional[str] = None,
-    cert: Optional[Union[str, Tuple[str, str]]] = None,
-    verify: bool = True,
-    auth_username: Optional[str] = None,
-    auth_password: Optional[str] = None
-) -> ApiClientConfig:
-    """
-    Create a fallback configuration for an API client
-    
-    Args:
-        base_url: Base URL for the fallback API
-        vendor: Vendor name for logging
-        headers: Headers for all requests
-        timeout: Timeout for all requests
-        api_key: API key for authentication
-        api_key_header: Header name for API key
-        cert: Certificate path or content
-        verify: Verify SSL
-        auth_username: Username for basic auth
-        auth_password: Password for basic auth
-        
-    Returns:
-        ApiClientConfig: Fallback configuration
-    """
-    return ApiClientConfig(
-        base_url=base_url,
-        headers=headers or {},
-        timeout=timeout,
-        vendor=vendor,
-        cert=cert,
-        verify=verify,
-        api_key=api_key,
-        api_key_header=api_key_header,
-        auth_username=auth_username,
-        auth_password=auth_password
+        **kwargs
     )
 
 
-# Simplified API call function for easier use
+# Legacy compatibility - update existing ApiClient to use correlation
+class ApiClient(CorrelationHTTPClient):
+    """Legacy API client that extends CorrelationHTTPClient for backward compatibility"""
+    pass
+
+
+# Legacy factory functions
+def create_api_client(*args, **kwargs) -> ApiClient:
+    """Legacy factory function for backward compatibility"""
+    return ApiClient(*args, **kwargs)
+
+
+# Decorator for internal service calls to attach correlation context
+def with_correlation_context(func):
+    """
+    Decorator to automatically set correlation context for internal service calls
+    """
+    async def wrapper(*args, **kwargs):
+        # Get current correlation ID
+        correlation_id = get_correlation_id()
+
+        if correlation_id:
+            # Set context for this service call
+            logger.set_context(correlation_id=correlation_id)
+
+            # Add correlation_id to kwargs if not present
+            if 'correlation_id' not in kwargs:
+                kwargs['correlation_id'] = correlation_id
+
+        try:
+            result = await func(*args, **kwargs)
+            return result
+        except Exception as e:
+            logger.error(
+                f"Service call failed: {func.__name__}",
+                extra={
+                    "event_type": "service_call_error",
+                    "function": func.__name__,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                }
+            )
+            raise
+
+    return wrapper
+
+
+# Legacy compatibility - call_api function
 async def call_api(
     url: str,
     method: str = "GET",
     data: Optional[Dict[str, Any]] = None,
-    json_data: Optional[Dict[str, Any]] = None,
     params: Optional[Dict[str, Any]] = None,
     headers: Optional[Dict[str, str]] = None,
+    vendor: str = "unknown",
     timeout: float = 30.0,
-    api_key: Optional[str] = None,
-    api_key_header: Optional[str] = None,
-    vendor: str = "external-api",
-    request_id: Optional[str] = None,
     account_id: Optional[str] = None,
-    application_id: Optional[str] = None,
-    fallback_url: Optional[str] = None,
-    fallback_api_key: Optional[str] = None
+    partner_journey_id: Optional[str] = None,
+    **kwargs
 ) -> Dict[str, Any]:
     """
-    Simplified function to make API calls with standardized logging and error handling
-    
-    This function creates a temporary API client, makes the request, and returns the response
-    data in a standardized format. All the internal details like circuit breaking, logging,
-    etc. are handled automatically.
-    
-    Args:
-        url: Full URL for the API call
-        method: HTTP method (GET, POST, PUT, DELETE, etc.)
-        data: Form data for request (for form submissions)
-        json_data: JSON data for request (for JSON APIs)
-        params: Query parameters
-        headers: Headers for request
-        timeout: Request timeout in seconds
-        api_key: API key for authentication
-        api_key_header: Header name for API key (e.g., "X-API-Key")
-        vendor: Vendor name for logging
-        request_id: Request ID for tracing and logging
-        account_id: Account ID for logging
-        application_id: Application ID for logging
-        fallback_url: Optional fallback URL if primary fails
-        fallback_api_key: Optional fallback API key
-    
-    Returns:
-        Dict containing:
-        - success: Boolean indicating if the call was successful
-        - data: Response data if successful
-        - status_code: HTTP status code
-        - error: Error details if not successful
-        - execution_time_ms: Request execution time in milliseconds
-        - fallback_used: Whether fallback was used
-    
-    Example:
-        result = await call_api(
-            url="https://api.example.com/users",
-            method="POST",
-            json_data={"name": "John Doe"},
-            api_key="your-api-key",
-            api_key_header="X-API-Key"
+    Legacy call_api function for backward compatibility
+
+    Returns a dict with success/error format expected by existing code:
+    {
+        "success": bool,
+        "data": dict | None,
+        "error": str | None,
+        "status_code": int | None,
+        "execution_time_ms": float
+    }
+    """
+
+    try:
+        # Parse base URL and endpoint from the full URL
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        endpoint = parsed.path
+
+        # Merge query params if endpoint has them
+        if parsed.query:
+            if params:
+                params.update(dict(pair.split('=') for pair in parsed.query.split('&') if '=' in pair))
+            else:
+                params = dict(pair.split('=') for pair in parsed.query.split('&') if '=' in pair)
+
+        # Create correlation client
+        client = create_correlation_client(
+            base_url=base_url,
+            vendor=vendor,
+            timeout=int(timeout)
         )
 
-        if result["success"]:
-            user_data = result["data"]
-            print(f"User created with ID: {user_data['id']}")
-        else:
-            print(f"Error: {result['error']}")
-    """
-    # Extract domain from URL for base URL
-    from urllib.parse import urlparse
-    parsed_url = urlparse(url)
-    base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
-    endpoint = parsed_url.path
-    if parsed_url.query:
-        endpoint = f"{endpoint}?{parsed_url.query}"
-    
-    # Setup fallback if provided
-    fallback_config = None
-    if fallback_url:
-        parsed_fallback = urlparse(fallback_url)
-        fallback_base_url = f"{parsed_fallback.scheme}://{parsed_fallback.netloc}"
-        
-        fallback_config = create_fallback_config(
-            base_url=fallback_base_url,
-            vendor=f"{vendor}-fallback",
-            api_key=fallback_api_key,
-            api_key_header=api_key_header if api_key_header else "X-API-Key",
-            timeout=timeout
-        )
-    
-    # Create API client
-    client = create_api_client(
-        base_url=base_url,
-        vendor=vendor,
-        headers=headers,
-        timeout=timeout,
-        api_key=api_key,
-        api_key_header=api_key_header,
-        fallback_config=fallback_config
-    )
-    
-    try:
-        # Make the request
-        start_time = time.time()
-        response_data, response_headers, status_code = await client.request(
-            method=method,
-            endpoint=endpoint,
-            data=data,
-            json_data=json_data,
-            params=params,
-            headers=headers,
-            request_id=request_id,
-            account_id=account_id,
-            application_id=application_id
-        )
-        execution_time = time.time() - start_time
-        
-        # Return standardized successful response
-        return {
-            "success": True,
-            "data": response_data,
-            "status_code": status_code,
-            "headers": response_headers,
-            "execution_time_ms": round(execution_time * 1000, 2),
-            "fallback_used": False
-        }
-        
-    except ExternalAPIException as e:
-        # Handle API error
-        return {
-            "success": False,
-            "error": str(e.detail),
-            "status_code": e.status_code,
-            "error_data": getattr(e, "response_data", None),
-            "execution_time_ms": 0,
-            "fallback_used": False
-        }
-        
-    except ServiceUnavailableException as e:
-        # Handle service unavailable
-        return {
-            "success": False,
-            "error": str(e.detail),
-            "status_code": status.HTTP_503_SERVICE_UNAVAILABLE,
-            "execution_time_ms": 0,
-            "fallback_used": "fallback" in str(e.detail).lower()
-        }
-        
-    except Exception as e:
-        # Handle unexpected errors
-        return {
-            "success": False,
-            "error": f"Unexpected error: {str(e)}",
-            "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
-            "execution_time_ms": 0,
-            "fallback_used": False
-        }
-        
-    finally:
-        # Always close the client
         try:
+            # Make the request
+            response_data, response_headers, status_code = await client.request(
+                method=method,
+                endpoint=endpoint,
+                data=data,
+                params=params,
+                headers=headers,
+                account_id=account_id,
+                partner_journey_id=partner_journey_id,
+                **kwargs
+            )
+
+            # Calculate execution time (approximation since we don't track it separately here)
+            execution_time_ms = 0.0  # Would need to be tracked in the client
+
+            return {
+                "success": True,
+                "data": response_data,
+                "error": None,
+                "status_code": status_code,
+                "execution_time_ms": execution_time_ms,
+            }
+
+        finally:
             await client.close()
-        except:
-            pass 
+
+    except Exception as e:
+        # Return error format expected by legacy code
+        return {
+            "success": False,
+            "data": None,
+            "error": str(e),
+            "status_code": getattr(e, 'status_code', None) if hasattr(e, 'status_code') else None,
+            "execution_time_ms": 0.0,
+        }

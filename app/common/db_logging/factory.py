@@ -1,24 +1,25 @@
 from typing import List, Optional
-from app.models.models_request_response import ApiCallLog, AppRequestLog
+
 from app.common.db_logging.base import BaseDBLogger
-from app.common.db_logging.mongo_logger import MongoLogger
 from app.common.db_logging.dynamo_logger import DynamoLogger
+from app.common.db_logging.mongo_logger import MongoLogger
 from app.common.db_logging.sqlite_logger import SQLiteLogger
 from app.config.settings import settings
+from app.models.models_request_response import ApiCallLog, AppRequestLog
 from app.utils.logger import logger
 
 
 class DBLoggerFactory:
     """Factory for creating and managing database loggers"""
-    
+
     def __init__(self):
         self._loggers: List[BaseDBLogger] = []
         self._initialize_loggers()
-    
+
     def _initialize_loggers(self):
         """Initialize available loggers based on environment settings"""
         loggers_enabled = False
-        
+
         # Initialize MongoDB logger if enabled
         if settings.API_LOG_MONGO_ENABLED and settings.API_LOG_MONGO_URI:
             mongo_logger = MongoLogger()
@@ -26,7 +27,7 @@ class DBLoggerFactory:
                 self._loggers.append(mongo_logger)
                 logger.info("MongoDB logger initialized")
                 loggers_enabled = True
-        
+
         # Initialize DynamoDB logger if enabled
         if settings.API_LOG_DYNAMODB_ENABLED and settings.API_LOG_DYNAMODB_TABLE:
             dynamo_logger = DynamoLogger()
@@ -34,7 +35,7 @@ class DBLoggerFactory:
                 self._loggers.append(dynamo_logger)
                 logger.info("DynamoDB logger initialized")
                 loggers_enabled = True
-        
+
         # Initialize SQLite logger if enabled or if no other loggers are available
         if settings.API_LOG_SQLITE_ENABLED or (settings.API_LOG_FALLBACK_ENABLED and not loggers_enabled):
             sqlite_logger = SQLiteLogger(db_path=settings.API_LOG_SQLITE_PATH)
@@ -43,7 +44,7 @@ class DBLoggerFactory:
                 logger.info("SQLite logger initialized as fallback")
             else:
                 logger.info("SQLite logger initialized")
-    
+
     async def log_api_call(self, log_data: ApiCallLog) -> None:
         """Log API call using available loggers"""
         for logger_instance in self._loggers:
@@ -51,13 +52,13 @@ class DBLoggerFactory:
                 await logger_instance.log_api_call(log_data)
             except Exception as e:
                 logger.error(f"Failed to log API call using {logger_instance.__class__.__name__}: {str(e)}", exc_info=True)
-    
+
     async def log_app_request(self, log_data: AppRequestLog) -> None:
         """Log app request using direct SQLite logging and SQLite logger"""
         from app.utils.direct_logger import log_request_direct
-        
+
         direct_log_success = False
-        
+
         # First try direct SQLite logging
         try:
             direct_log_success = log_request_direct(
@@ -80,7 +81,7 @@ class DBLoggerFactory:
         except Exception as e:
             logger.error(f"Failed to log app request via direct logger: {str(e)}", exc_info=True)
             direct_log_success = False
-        
+
         # If direct logging fails, try using SQLite logger from our list
         if not direct_log_success:
             logger.info("Direct logging failed, trying SQLite logger from loggers list")
@@ -93,7 +94,7 @@ class DBLoggerFactory:
                         return
                     except Exception as e:
                         logger.error(f"Failed to log app request via SQLite logger: {str(e)}", exc_info=True)
-    
+
     async def close(self) -> None:
         """Close all loggers"""
         for logger_instance in self._loggers:
@@ -105,4 +106,4 @@ class DBLoggerFactory:
 
 
 # Create a global logger factory for the module
-global_logger_factory = DBLoggerFactory() 
+global_logger_factory = DBLoggerFactory()

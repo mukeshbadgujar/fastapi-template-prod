@@ -1,4 +1,5 @@
 import time
+
 from fastapi import APIRouter, Request
 
 from app.common.response import ResponseUtil
@@ -24,9 +25,9 @@ async def home(request: Request):
             "redoc": f"{settings.API_PREFIX}/redoc"
         }
     }
-    
+
     # Return standardized response
     return ResponseUtil.success_response(
         data=api_info,
         message="Welcome to the API",
-    ) 
+    )

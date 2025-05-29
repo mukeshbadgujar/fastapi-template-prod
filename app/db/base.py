@@ -6,7 +6,6 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config.settings import settings
 
-
 # Create SQLAlchemy engine
 engine = create_engine(
     settings.SQLITE_URL, #DATABASE_URL,
@@ -23,13 +22,13 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 class Base:
     """
     Base class for SQLAlchemy models
-    
+
     All models will have an __tablename__ attribute automatically generated
     from the class name
     """
     id: Any
     __name__: str
-    
+
     # Generate __tablename__ automatically
     @declared_attr
     def __tablename__(cls) -> str:
@@ -39,7 +38,7 @@ class Base:
 def get_db() -> Generator:
     """
     Dependency function to get a database session
-    
+
     Usage:
         @router.get("/endpoint")
         def endpoint(db: Session = Depends(get_db)):

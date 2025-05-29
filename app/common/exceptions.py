@@ -6,17 +6,17 @@ from fastapi import HTTPException, status
 class BaseAPIException(HTTPException):
     """
     Base exception class for all API exceptions
-    
-    All API exceptions should inherit from this class to ensure consistent 
+
+    All API exceptions should inherit from this class to ensure consistent
     error handling and response format.
     """
     status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
     detail: str = "An unexpected error occurred"
     headers: Optional[Dict[str, Any]] = None
-    
+
     def __init__(
-        self, 
-        detail: Optional[str] = None, 
+        self,
+        detail: Optional[str] = None,
         headers: Optional[Dict[str, Any]] = None
     ):
         """
@@ -24,7 +24,7 @@ class BaseAPIException(HTTPException):
         """
         actual_detail = detail if detail is not None else self.detail
         actual_headers = headers if headers is not None else self.headers
-        
+
         super().__init__(
             status_code=self.status_code,
             detail=actual_detail,
@@ -91,10 +91,10 @@ class ExternalAPIException(BaseAPIException):
     """Exception for external API call failures"""
     status_code = status.HTTP_502_BAD_GATEWAY
     detail = "External API call failed"
-    
+
     def __init__(
-        self, 
-        detail: Optional[str] = None, 
+        self,
+        detail: Optional[str] = None,
         service_name: Optional[str] = None,
         status_code: Optional[int] = None,
         response_data: Optional[Dict[str, Any]] = None,
@@ -102,7 +102,7 @@ class ExternalAPIException(BaseAPIException):
     ):
         """
         Initialize with external API call details
-        
+
         Args:
             detail: Error message
             service_name: Name of the external service
@@ -112,15 +112,15 @@ class ExternalAPIException(BaseAPIException):
         """
         if status_code is not None:
             self.status_code = status_code
-            
+
         # Create detailed error message
         message = detail if detail else self.detail
         if service_name:
             message = f"{message} - Service: {service_name}"
-            
+
         # Include response data as extra
         self.response_data = response_data
-        
+
         super().__init__(
             detail=message,
             headers=headers

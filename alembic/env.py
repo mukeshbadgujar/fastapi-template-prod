@@ -4,7 +4,11 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.config.settings import settings
-from app.db.base import Base
+from app.models.user import Base
+
+# Import all models so Alembic can detect them
+from app.models.user import User
+from app.models.template import *  # Import all template models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

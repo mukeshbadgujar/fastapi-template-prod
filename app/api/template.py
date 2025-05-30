@@ -2,11 +2,11 @@ import time
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Request, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.exceptions import NotFoundException
 from app.common.response import PaginationMeta, ResponseUtil
-from app.db.base import get_db
+from app.db.session import get_db
 from app.utils.logger import logger
 
 # Create a router for this API module
@@ -23,7 +23,7 @@ async def get_items(
     skip: int = Query(0, ge=0, description="Number of items to skip"),
     limit: int = Query(100, ge=1, le=100, description="Number of items to return"),
     search: Optional[str] = Query(None, description="Search term"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Retrieve a list of items.
@@ -77,7 +77,7 @@ async def get_items(
 async def get_item(
     request: Request,
     item_id: int = Path(..., description="The ID of the item to retrieve"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Retrieve a single item by its ID.
@@ -130,7 +130,7 @@ async def get_item(
 async def create_item(
     request: Request,
     # item_in: ItemCreate,  # Change to your schema
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Create a new item.
@@ -171,7 +171,7 @@ async def update_item(
     request: Request,
     item_id: int = Path(..., description="The ID of the item to update"),
     # item_in: ItemUpdate,  # Change to your schema
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Update an existing item.
@@ -232,7 +232,7 @@ async def update_item(
 async def delete_item(
     request: Request,
     item_id: int = Path(..., description="The ID of the item to delete"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Delete an item.

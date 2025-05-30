@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # Database URL - supports SQLite, PostgreSQL, MySQL, etc.
     DATABASE_URL: Optional[str] = None
     # Fallback to SQLite for development if no DATABASE_URL is provided
-    SQLITE_URL: str = "sqlite:///./sql_app.db"
+    SQLITE_URL: str = "sqlite+aiosqlite:///./sql_app.db"
 
     # Docker Database Config
     DB_USER: str = "postgres"
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     def assemble_db_url(cls, v: Optional[str]) -> str:
         if v:
             return v
-        return "sqlite:///./sql_app.db"
+        return "sqlite+aiosqlite:///./sql_app.db"
 
     # CORS
     CORS_ORIGINS: Union[List[str], str] = []
@@ -54,11 +54,11 @@ class Settings(BaseSettings):
             return v
         raise ValueError(v)
 
-    # === ENHANCED LOGGING CONFIGURATION ===
+    # === UNIFIED LOGGING CONFIGURATION ===
 
     # Pluggable Logging Backend - Single ENV var to control which DB to use
     LOG_DB_URL: str = Field(
-        default="sqlite:///./api_logs.db",
+        default="sqlite+aiosqlite:///./api_logs.db",
         description="Database URL for logging (SQLite, PostgreSQL, MySQL, etc.)"
     )
 
@@ -72,16 +72,6 @@ class Settings(BaseSettings):
         default="internal_api_logs",
         description="Table name for internal/3rd-party API call logs"
     )
-
-    # Legacy fields - kept for backward compatibility but deprecated
-    API_LOG_MONGO_URI: Optional[str] = None
-    API_LOG_DYNAMODB_TABLE: Optional[str] = None
-    API_LOG_MONGO_ENABLED: bool = False
-    API_LOG_DYNAMODB_ENABLED: bool = False
-    API_LOG_SQLITE_ENABLED: bool = True
-    API_LOG_FALLBACK_ENABLED: bool = True
-    API_LOG_SQLITE_PATH: str = "api_logs.db"
-    API_LOG_REAL_TIME: bool = True
 
     # === ADVANCED LOGGING CONFIGURATION ===
 

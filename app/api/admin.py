@@ -3,9 +3,10 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import desc, select
 
 from app.config.settings import settings
-from app.utils.direct_logger import SQLITE_DB_PATH, get_app_request_logs
+from app.core.logging_backend import APIRequestLog, get_db_logger
 from app.utils.logger import logger
 
 # Create admin router
@@ -41,14 +42,40 @@ async def get_request_logs(
     """
     Get the most recent application request logs.
 
-    This endpoint provides access to the request logs stored in the SQLite database.
+    This endpoint provides access to the request logs stored in the database.
     It's useful for debugging and monitoring API activity.
     """
     try:
-        # Always convert limit to int from query parameter
-        limit_value = int(limit)
-        logs = get_app_request_logs(limit=limit_value, with_body=False, refresh=refresh)
-        return logs
+        db_logger = await get_db_logger()
+        if not db_logger:
+            raise HTTPException(status_code=503, detail="Logging backend not available")
+
+        # Get logs from database
+        async with db_logger.async_session_maker() as session:
+            result = await session.execute(
+                select(APIRequestLog)
+                .order_by(desc(APIRequestLog.timestamp))
+                .limit(limit)
+            )
+            logs = result.scalars().all()
+
+            return [
+                RequestLog(
+                    request_id=log.request_id or "",
+                    endpoint=log.path or "",
+                    method=log.method or "",
+                    client_ip=log.client_ip,
+                    user_agent=log.user_agent,
+                    request_path=log.path or "",
+                    request_query_params=log.query_params or {},
+                    status_code=log.status_code or 0,
+                    execution_time_ms=log.execution_time_ms or 0.0,
+                    error_message=log.error_message,
+                    timestamp=log.timestamp.isoformat() if log.timestamp else ""
+                )
+                for log in logs
+            ]
+
     except Exception as e:
         logger.error(f"Error retrieving request logs: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve logs")
@@ -62,16 +89,36 @@ async def get_request_log_detail(request_id: str):
     This endpoint is useful for debugging specific API calls by request ID.
     """
     try:
-        # Get log with bodies included
-        logs = get_app_request_logs(limit=1000, with_body=True)
+        db_logger = await get_db_logger()
+        if not db_logger:
+            raise HTTPException(status_code=503, detail="Logging backend not available")
 
-        # Find the specific request
-        for log in logs:
-            if log.get("request_id") == request_id:
-                return log
+        # Get specific log from database
+        async with db_logger.async_session_maker() as session:
+            result = await session.execute(
+                select(APIRequestLog).where(APIRequestLog.request_id == request_id)
+            )
+            log = result.scalar_one_or_none()
 
-        # If we get here, log was not found
-        raise HTTPException(status_code=404, detail=f"Request log with ID {request_id} not found")
+            if not log:
+                raise HTTPException(status_code=404, detail=f"Request log with ID {request_id} not found")
+
+            return RequestLogDetail(
+                request_id=log.request_id or "",
+                endpoint=log.path or "",
+                method=log.method or "",
+                client_ip=log.client_ip,
+                user_agent=log.user_agent,
+                request_path=log.path or "",
+                request_query_params=log.query_params or {},
+                status_code=log.status_code or 0,
+                execution_time_ms=log.execution_time_ms or 0.0,
+                error_message=log.error_message,
+                timestamp=log.timestamp.isoformat() if log.timestamp else "",
+                request_body=log.body,
+                response_body=log.response_body
+            )
+
     except HTTPException:
         raise
     except Exception as e:
@@ -82,39 +129,48 @@ async def get_request_log_detail(request_id: str):
 @router.get("/logs/db-info")
 async def get_db_info():
     """
-    Get information about the SQLite database configuration
+    Get information about the logging database configuration
     """
+    db_logger = await get_db_logger()
+    
     return {
-        "db_path": SQLITE_DB_PATH,
-        "absolute_path": os.path.abspath(SQLITE_DB_PATH),
-        "exists": os.path.exists(SQLITE_DB_PATH),
-        "size_bytes": os.path.getsize(SQLITE_DB_PATH) if os.path.exists(SQLITE_DB_PATH) else 0,
-        "settings_path": settings.API_LOG_SQLITE_PATH
+        "log_db_url": settings.LOG_DB_URL,
+        "api_log_table": settings.API_LOG_TABLE,
+        "internal_api_log_table": settings.INT_API_LOG_TABLE,
+        "backend_available": db_logger is not None,
+        "backend_initialized": db_logger._initialized if db_logger else False
     }
 
 
-@router.post("/logs/toggle-real-time")
-async def toggle_real_time_logging(enable: bool = Query(None, description="Enable or disable real-time logging")):
+@router.get("/logs/stats")
+async def get_log_stats():
     """
-    Toggle real-time request logging
-
-    This endpoint allows you to enable or disable real-time request logging.
-    When disabled, requests will not be logged to the SQLite database in real-time,
-    which can improve performance in high-traffic environments.
+    Get statistics about the logs in the database
     """
-    # Import the module with the global variable
-    from app.middleware.request_logger import REAL_TIME_LOGGING
+    try:
+        db_logger = await get_db_logger()
+        if not db_logger:
+            raise HTTPException(status_code=503, detail="Logging backend not available")
 
-    # Get the current value if no parameter specified
-    if enable is None:
-        return {"real_time_logging": REAL_TIME_LOGGING}
+        async with db_logger.async_session_maker() as session:
+            # Count total logs
+            from sqlalchemy import func
+            total_logs = await session.scalar(select(func.count(APIRequestLog.id)))
+            
+            # Count by status code
+            status_counts = await session.execute(
+                select(APIRequestLog.status_code, func.count(APIRequestLog.id))
+                .group_by(APIRequestLog.status_code)
+                .order_by(APIRequestLog.status_code)
+            )
+            
+            return {
+                "total_logs": total_logs,
+                "status_code_distribution": {
+                    str(status): count for status, count in status_counts.all()
+                }
+            }
 
-    # Update the module's global variable
-    import sys
-    module = sys.modules['app.middleware.request_logger']
-    setattr(module, 'REAL_TIME_LOGGING', enable)
-
-    return {
-        "real_time_logging": enable,
-        "message": f"Real-time logging {'enabled' if enable else 'disabled'}"
-    }
+    except Exception as e:
+        logger.error(f"Error retrieving log stats: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve log statistics")

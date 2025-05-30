@@ -1,225 +1,69 @@
-# FastAPI Production Template - Environment Configuration
-# Copy this file to .env and customize for your environment
+# FastAPI Template Environment Configuration
+# Copy this file to .env and update the values as needed
 
-# =============================================================================
-# BASIC APPLICATION SETTINGS
-# =============================================================================
-
-# Environment (dev, uat, prod, preprod)
-ENV=dev
-
-# Debug mode
-DEBUG=true
-
-# Project information
+# === PROJECT CONFIGURATION ===
 PROJECT_NAME="FastAPI Template"
 PROJECT_DESCRIPTION="A production-ready FastAPI template"
 VERSION="0.1.0"
 API_PREFIX="/api"
 
-# =============================================================================
-# SECURITY & AUTHENTICATION SETTINGS
-# =============================================================================
+# === ENVIRONMENT ===
+ENV="dev"  # dev, uat, prod, preprod
+DEBUG=true
 
-# JWT Authentication
-SECRET_KEY="CHANGE_ME_IN_PRODUCTION_USE_STRONG_SECRET"
+# === SECURITY ===
+SECRET_KEY="CHANGE_ME_IN_PRODUCTION_USE_STRONG_SECRET_KEY"
 ALGORITHM="HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES=30
-REFRESH_TOKEN_EXPIRE_DAYS=7
 
-# API Key Authentication
-API_KEY_HEADER="X-API-Key"
-API_KEY_PREFIX="sk_"
-API_KEY_LENGTH=32
-
-# Password Security
-PASSWORD_MIN_LENGTH=8
-PASSWORD_REQUIRE_UPPERCASE=true
-PASSWORD_REQUIRE_LOWERCASE=true
-PASSWORD_REQUIRE_NUMBERS=true
-PASSWORD_REQUIRE_SPECIAL_CHARS=false
-
-# =============================================================================
-# DATABASE CONFIGURATION
-# =============================================================================
-
+# === DATABASE CONFIGURATION ===
 # Main application database
-DATABASE_URL="sqlite:///./sql_app.db"
-# Examples for other databases:
-# DATABASE_URL="postgresql://user:password@localhost:5432/dbname"
-# DATABASE_URL="mysql://user:password@localhost:3306/dbname"
+DATABASE_URL="sqlite+aiosqlite:///./sql_app.db"
+# For PostgreSQL: DATABASE_URL="postgresql+asyncpg://user:password@localhost/dbname"
+# For MySQL: DATABASE_URL="mysql+aiomysql://user:password@localhost/dbname"
 
-# Docker database settings (for docker-compose)
+# Docker Database Config (if using Docker)
 DB_USER="postgres"
 DB_PASSWORD="postgres"
 DB_NAME="fastapi"
 
-# =============================================================================
-# REDIS CONFIGURATION
-# =============================================================================
+# === LOGGING CONFIGURATION ===
+# Logging database (can be same as main DB or separate)
+LOG_DB_URL="sqlite+aiosqlite:///./api_logs.db"
 
-# Redis connection for configuration management
-REDIS_URL="redis://localhost:6379/0"
-REDIS_PASSWORD=""
-REDIS_DB=0
-REDIS_TIMEOUT=10
+# Table names for different log types
+API_LOG_TABLE="api_request_logs"
+INT_API_LOG_TABLE="internal_api_logs"
 
-# Redis configuration settings
-REDIS_CONFIG_PREFIX="fastapi_config"
-REDIS_CONFIG_TTL=3600
-REDIS_CONFIG_CACHE_ENABLED=true
+# Logging format and level
+LOG_FORMAT="json"  # json or pretty
+LOG_PRETTY=false
+LOG_LEVEL="INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+LOG_COLOR=true
 
-# =============================================================================
-# ENHANCED LOGGING CONFIGURATION
-# =============================================================================
+# Correlation tracking
+ENABLE_CORRELATION_ID=true
+CORRELATION_ID_HEADER="X-Correlation-ID"
 
-# Pluggable logging backend - single ENV var to control which DB to use
-LOG_DB_URL="sqlite:///./api_logs.db"
-
-# Examples for different databases:
-# LOG_DB_URL="sqlite:///./logs/api_logs.db"                    # SQLite (default)
-# LOG_DB_URL="postgresql://user:pass@localhost:5432/logs"     # PostgreSQL
-# LOG_DB_URL="mysql://user:pass@localhost:3306/logs"          # MySQL
-
-# Configurable table names for different log types
-API_LOG_TABLE="api_request_logs"         # Table for incoming API requests
-INT_API_LOG_TABLE="internal_api_logs"    # Table for outgoing/3rd-party API calls
-
-# JSON Logging Configuration
-LOG_FORMAT="json"                        # Options: "json", "pretty"
-LOG_PRETTY=false                         # Enable pretty/human-readable format
-LOG_LEVEL="INFO"                         # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
-LOG_COLOR=true                           # Enable colored console output
-
-# Correlation ID Configuration
-ENABLE_CORRELATION_ID=true               # Enable correlation ID generation/propagation
-CORRELATION_ID_HEADER="X-Correlation-ID" # Header name for correlation ID
-
-# =============================================================================
-# CORS CONFIGURATION
-# =============================================================================
-
-# CORS origins (comma-separated)
+# === CORS CONFIGURATION ===
 CORS_ORIGINS="http://localhost:3000,http://localhost:8080"
 
-# =============================================================================
-# EXTERNAL SERVICES & API KEYS
-# =============================================================================
-
-# Third-party API keys
-OPENWEATHERMAP_API_KEY="your_api_key_here"
+# === EXTERNAL SERVICES ===
+# OpenWeatherMap API
+OPENWEATHERMAP_API_KEY="your_openweathermap_api_key_here"
 
 # AWS Configuration (if using AWS services)
 AWS_REGION="us-east-1"
 # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY should be set via AWS CLI or IAM roles
 
-# Email Service (for authentication notifications)
-EMAIL_ENABLED=false
-SMTP_HOST="smtp.gmail.com"
-SMTP_PORT=587
-SMTP_USERNAME="your_email@gmail.com"
-SMTP_PASSWORD="your_app_password"
-EMAIL_FROM="noreply@yourdomain.com"
+# Redis Configuration (if using Redis)
+REDIS_URL="redis://localhost:6379"
 
-# =============================================================================
-# FEATURE FLAGS (these can be overridden via Redis configuration)
-# =============================================================================
-
-# Authentication Features
-FEATURE_USER_REGISTRATION=true
-FEATURE_API_KEY_CREATION=true
-FEATURE_EMAIL_VERIFICATION=false
-FEATURE_PASSWORD_RESET=true
-FEATURE_ACCOUNT_LOCKOUT=true
-
-# API Features
-FEATURE_RATE_LIMITING=true
-FEATURE_REQUEST_LOGGING=true
-FEATURE_METRICS_COLLECTION=true
-FEATURE_ADMIN_ENDPOINTS=true
-
-# External Integration Features
-FEATURE_REDIS_CONFIG=true
-FEATURE_WEATHER_API=true
-FEATURE_WEBHOOK_NOTIFICATIONS=false
-
-# =============================================================================
-# RATE LIMITING CONFIGURATION
-# =============================================================================
-
-# Default rate limits (can be overridden per API key)
-DEFAULT_RATE_LIMIT_PER_MINUTE=1000
-LOGIN_RATE_LIMIT_PER_HOUR=5
-REGISTRATION_RATE_LIMIT_PER_DAY=10
-API_KEY_RATE_LIMIT_PER_MINUTE=100
-
-# Account security limits
-MAX_LOGIN_ATTEMPTS=5
-ACCOUNT_LOCKOUT_MINUTES=15
-SESSION_TIMEOUT_MINUTES=30
-
-# =============================================================================
-# LEGACY LOGGING SETTINGS (deprecated but kept for backward compatibility)
-# =============================================================================
-
-# Legacy API logging settings (use LOG_DB_URL instead)
-API_LOG_MONGO_ENABLED=false
-API_LOG_DYNAMODB_ENABLED=false
-API_LOG_SQLITE_ENABLED=true
-API_LOG_FALLBACK_ENABLED=true
-API_LOG_SQLITE_PATH="api_logs.db"
-API_LOG_REAL_TIME=true
-
-# Legacy MongoDB/DynamoDB settings (deprecated)
-# API_LOG_MONGO_URI="mongodb://localhost:27017/logs"
-# API_LOG_DYNAMODB_TABLE="api_logs"
-
-# =============================================================================
-# EXAMPLE CONFIGURATIONS FOR DIFFERENT ENVIRONMENTS
-# =============================================================================
-
-# DEVELOPMENT ENVIRONMENT EXAMPLE:
-# ENV=dev
-# DEBUG=true
-# SECRET_KEY=dev-secret-key-change-in-production
-# DATABASE_URL=sqlite:///./dev_app.db
-# LOG_DB_URL=sqlite:///./dev_logs.db
-# LOG_FORMAT=pretty
-# LOG_PRETTY=true
-# LOG_LEVEL=DEBUG
-# LOG_COLOR=true
-# REDIS_URL=redis://localhost:6379/0
-# FEATURE_EMAIL_VERIFICATION=false
-# DEFAULT_RATE_LIMIT_PER_MINUTE=10000
-
-# PRODUCTION ENVIRONMENT EXAMPLE:
-# ENV=prod
-# DEBUG=false
-# SECRET_KEY=your-super-secure-secret-key-min-32-chars
-# DATABASE_URL=postgresql://app_user:secure_password@db.example.com:5432/production
-# LOG_DB_URL=postgresql://logs_user:secure_password@db.example.com:5432/production_logs
-# LOG_FORMAT=json
-# LOG_PRETTY=false
-# LOG_LEVEL=INFO
-# LOG_COLOR=false
-# REDIS_URL=redis://redis.example.com:6379/0
-# API_LOG_TABLE=prod_api_logs
-# INT_API_LOG_TABLE=prod_internal_api_logs
-# FEATURE_EMAIL_VERIFICATION=true
-# DEFAULT_RATE_LIMIT_PER_MINUTE=500
-# EMAIL_ENABLED=true
-
-# UAT ENVIRONMENT EXAMPLE:
-# ENV=uat
-# DEBUG=false
-# SECRET_KEY=uat-secret-key-different-from-prod
-# DATABASE_URL=postgresql://uat_user:password@uat-db.example.com:5432/uat
-# LOG_DB_URL=postgresql://logs_user:password@uat-db.example.com:5432/uat_logs
-# LOG_FORMAT=json
-# LOG_PRETTY=false
-# LOG_LEVEL=INFO
-# REDIS_URL=redis://uat-redis.example.com:6379/0
-# API_LOG_TABLE=uat_api_logs
-# INT_API_LOG_TABLE=uat_internal_api_logs
-# FEATURE_EMAIL_VERIFICATION=true
-# DEFAULT_RATE_LIMIT_PER_MINUTE=1000
+# === PRODUCTION SETTINGS ===
+# For production, ensure you:
+# 1. Change SECRET_KEY to a strong, random value
+# 2. Set DEBUG=false
+# 3. Use a production database (PostgreSQL/MySQL)
+# 4. Set proper CORS_ORIGINS
+# 5. Configure proper logging levels
+# 6. Set up proper SSL/TLS certificates 

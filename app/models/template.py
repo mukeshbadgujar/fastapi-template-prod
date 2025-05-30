@@ -1,3 +1,10 @@
+"""
+Template Models
+
+This module contains SQLAlchemy models for template-related entities.
+These models serve as examples and should be modified according to your specific use case.
+"""
+
 import uuid
 from datetime import datetime
 from typing import Any, List, Optional, Union
@@ -17,7 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
-from app.db.base import Base
+from app.models.user import Base
 
 
 class TimestampMixin:
@@ -45,9 +52,9 @@ class Item(Base, TimestampMixin):
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
-    # Relationships
+    # Relationships - use string references to avoid circular imports
     category = relationship("Category", back_populates="items")
-    owner = relationship("User", back_populates="items")
+    # Note: User relationship removed to avoid circular import
 
     # Additional constraints
     __table_args__ = (
@@ -79,29 +86,6 @@ class Category(Base, TimestampMixin):
         return f"<Category(id={self.id}, name='{self.name}')>"
 
 
-class User(Base, TimestampMixin):
-    """
-    Example User model
-
-    Demonstrates a model with UUID primary key and multiple relationships
-    """
-    __tablename__ = "users"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    username = Column(String(50), unique=True, nullable=False, index=True)
-    full_name = Column(String(100), nullable=True)
-    hashed_password = Column(String(255), nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
-
-    # Relationships - One-to-Many with Item
-    items = relationship("Item", back_populates="owner", cascade="all, delete-orphan")
-
-    def __repr__(self) -> str:
-        """String representation of the model"""
-        return f"<User(id={self.id}, username='{self.username}')>"
-
-
 class Transaction(Base, TimestampMixin):
     """
     Example Transaction model
@@ -115,10 +99,10 @@ class Transaction(Base, TimestampMixin):
     description = Column(String(255), nullable=True)
 
     # Foreign keys
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
-    # Relationships
-    user = relationship("User")
+    # Relationships - use string reference to avoid circular import
+    # Note: User relationship removed to avoid circular import
 
     def __repr__(self) -> str:
         """String representation of the model"""

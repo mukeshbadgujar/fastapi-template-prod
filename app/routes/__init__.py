@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 
+from app.api.admin import router as admin_router
+from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.home import router as home_router
 from app.api.template import router as template_router
@@ -26,13 +28,13 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(health_router, prefix=settings.API_PREFIX)
     app.include_router(template_router, prefix=settings.API_PREFIX)
     app.include_router(weather_router, prefix=settings.API_PREFIX)
+    
+    # Auth routes
+    app.include_router(auth_router, prefix=settings.API_PREFIX, tags=["Authentication"])
+
+    # Admin routes (already has /admin prefix in the router)
+    app.include_router(admin_router, prefix=settings.API_PREFIX, tags=["Admin"])
 
     # Add more route groups as needed, for example:
-    # Auth routes
-    # app.include_router(auth_router, prefix=f"{settings.API_PREFIX}/auth", tags=["Authentication"])
-
     # User routes
     # app.include_router(user_router, prefix=f"{settings.API_PREFIX}/users", tags=["Users"])
-
-    # Admin routes
-    # app.include_router(admin_router, prefix=f"{settings.API_PREFIX}/admin", tags=["Admin"])

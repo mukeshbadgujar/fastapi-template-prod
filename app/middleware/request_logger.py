@@ -12,15 +12,10 @@ from starlette.concurrency import iterate_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.types import ASGIApp
 
-from app.common.db_logging.factory import DBLoggerFactory, global_logger_factory
 from app.config.settings import settings
 from app.models.models_request_response import AppRequestLog
-from app.utils.direct_logger import ensure_sqlite_table_exists, log_request_direct
 from app.utils.logger import generate_correlation_id, logger, set_correlation_id
 
-# Ensure SQLite table exists
-if not ensure_sqlite_table_exists():
-    logger.warning("Failed to init SQLite table for API logs.")
 
 class CorrelationMiddleware(BaseHTTPMiddleware):
     """
@@ -357,8 +352,8 @@ class EnhancedRequestLoggerMiddleware(BaseHTTPMiddleware):
 def setup_logging_middlewares(app: FastAPI):
     """Setup all logging-related middlewares"""
 
-    # Add correlation middleware first (runs last, returns first)
-    app.add_middleware(CorrelationMiddleware)
-
-    # Add request logging middleware
+    # Add request logging middleware first (runs second)
     app.add_middleware(EnhancedRequestLoggerMiddleware)
+    
+    # Add correlation middleware second (runs first, sets correlation_id)
+    app.add_middleware(CorrelationMiddleware)

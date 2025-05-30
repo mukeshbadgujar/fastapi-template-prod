@@ -118,6 +118,12 @@ class Settings(BaseSettings):
     # Third-party API keys
     OPENWEATHERMAP_API_KEY: str = Field("", env="OPENWEATHERMAP_API_KEY")
 
+    # Razorpay Configuration
+    RAZORPAY_KEY_ID: str = Field("", env="RAZORPAY_KEY_ID")
+    RAZORPAY_KEY_SECRET: str = Field("", env="RAZORPAY_KEY_SECRET")
+    RAZORPAY_WEBHOOK_SECRET: str = Field("", env="RAZORPAY_WEBHOOK_SECRET")
+    RAZORPAY_ENVIRONMENT: str = Field("test", env="RAZORPAY_ENVIRONMENT")  # test/live
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

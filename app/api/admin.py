@@ -1,12 +1,17 @@
 import os
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends, status
 from pydantic import BaseModel
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, func, case
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import get_current_active_user
+from app.common.response import ResponseUtil
 from app.config.settings import settings
 from app.core.logging_backend import APIRequestLog, get_db_logger
+from app.db.session import get_db
+from app.models.user import User
 from app.utils.logger import logger
 
 # Create admin router
@@ -154,7 +159,6 @@ async def get_log_stats():
 
         async with db_logger.async_session_maker() as session:
             # Count total logs
-            from sqlalchemy import func
             total_logs = await session.scalar(select(func.count(APIRequestLog.id)))
             
             # Count by status code
@@ -174,3 +178,338 @@ async def get_log_stats():
     except Exception as e:
         logger.error(f"Error retrieving log stats: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve log statistics")
+
+
+# === PAYMENT ADMIN ENDPOINTS ===
+
+@router.get("/payments/stats")
+async def get_payment_statistics(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get comprehensive payment statistics for admin monitoring"""
+    
+    try:
+        from app.services.payment_service import get_payment_service
+        
+        payment_service = get_payment_service()
+        stats = await payment_service.get_payment_statistics(db)
+        
+        return ResponseUtil.success_response(
+            data=stats,
+            message="Payment statistics retrieved successfully"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error retrieving payment statistics: {e}")
+        return ResponseUtil.error_response(
+            message="Failed to retrieve payment statistics",
+            errors=[str(e)],
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@router.get("/payments/mandates")
+async def list_all_mandates(
+    status: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all mandates for admin monitoring"""
+    
+    try:
+        from app.models.payment import Mandate, RazorpayCustomer, MandateStatus
+        from app.schemas.payment import MandateResponse
+        from sqlalchemy.orm import selectinload
+        
+        stmt = select(Mandate).options(
+            selectinload(Mandate.customer)
+        ).join(RazorpayCustomer)
+        
+        if status:
+            try:
+                mandate_status = MandateStatus(status)
+                stmt = stmt.where(Mandate.status == mandate_status)
+            except ValueError:
+                return ResponseUtil.error_response(
+                    message="Invalid status",
+                    errors=[f"Status must be one of: {[s.value for s in MandateStatus]}"],
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+        
+        stmt = stmt.order_by(desc(Mandate.created_at)).offset(skip).limit(limit)
+        
+        result = await db.execute(stmt)
+        mandates = result.scalars().all()
+        
+        mandate_responses = [MandateResponse.from_orm(mandate) for mandate in mandates]
+        
+        return ResponseUtil.success_response(
+            data={
+                "mandates": mandate_responses,
+                "total": len(mandate_responses),
+                "skip": skip,
+                "limit": limit,
+                "has_more": len(mandate_responses) == limit
+            },
+            message="Mandates retrieved successfully"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error listing mandates: {e}")
+        return ResponseUtil.error_response(
+            message="Failed to retrieve mandates",
+            errors=[str(e)],
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@router.get("/payments/failed")
+async def get_failed_payments(
+    skip: int = 0,
+    limit: int = 50,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get failed payments for admin analysis"""
+    
+    try:
+        from app.models.payment import PaymentTransaction, RazorpayCustomer, PaymentStatus
+        from app.schemas.payment import PaymentResponse
+        from sqlalchemy.orm import selectinload
+        
+        stmt = select(PaymentTransaction).options(
+            selectinload(PaymentTransaction.customer),
+            selectinload(PaymentTransaction.mandate)
+        ).join(RazorpayCustomer).where(
+            PaymentTransaction.status == PaymentStatus.FAILED
+        ).order_by(desc(PaymentTransaction.created_at)).offset(skip).limit(limit)
+        
+        result = await db.execute(stmt)
+        payments = result.scalars().all()
+        
+        payment_responses = []
+        for payment in payments:
+            payment_data = PaymentResponse.from_orm(payment)
+            payment_responses.append(payment_data)
+        
+        return ResponseUtil.success_response(
+            data={
+                "failed_payments": payment_responses,
+                "total": len(payment_responses),
+                "skip": skip,
+                "limit": limit,
+                "has_more": len(payment_responses) == limit
+            },
+            message="Failed payments retrieved successfully"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error retrieving failed payments: {e}")
+        return ResponseUtil.error_response(
+            message="Failed to retrieve failed payments",
+            errors=[str(e)],
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@router.get("/webhooks/events")
+async def list_webhook_events(
+    event_type: Optional[str] = None,
+    status: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List webhook events for admin monitoring"""
+    
+    try:
+        from app.models.payment import WebhookEvent, WebhookEventStatus
+        from app.schemas.payment import WebhookEventResponse
+        
+        stmt = select(WebhookEvent)
+        
+        if event_type:
+            stmt = stmt.where(WebhookEvent.event_type == event_type)
+        
+        if status:
+            try:
+                webhook_status = WebhookEventStatus(status)
+                stmt = stmt.where(WebhookEvent.status == webhook_status)
+            except ValueError:
+                return ResponseUtil.error_response(
+                    message="Invalid status",
+                    errors=[f"Status must be one of: {[s.value for s in WebhookEventStatus]}"],
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+        
+        stmt = stmt.order_by(desc(WebhookEvent.received_at)).offset(skip).limit(limit)
+        
+        result = await db.execute(stmt)
+        events = result.scalars().all()
+        
+        event_responses = [WebhookEventResponse.from_orm(event) for event in events]
+        
+        return ResponseUtil.success_response(
+            data={
+                "webhook_events": event_responses,
+                "total": len(event_responses),
+                "skip": skip,
+                "limit": limit,
+                "has_more": len(event_responses) == limit
+            },
+            message="Webhook events retrieved successfully"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error listing webhook events: {e}")
+        return ResponseUtil.error_response(
+            message="Failed to retrieve webhook events",
+            errors=[str(e)],
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@router.get("/payments/customers")
+async def list_payment_customers(
+    skip: int = 0,
+    limit: int = 50,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List payment customers for admin monitoring"""
+    
+    try:
+        from app.models.payment import RazorpayCustomer
+        from app.schemas.payment import CustomerResponse
+        from sqlalchemy.orm import selectinload
+        
+        stmt = select(RazorpayCustomer).options(
+            selectinload(RazorpayCustomer.user)
+        ).order_by(desc(RazorpayCustomer.created_at)).offset(skip).limit(limit)
+        
+        result = await db.execute(stmt)
+        customers = result.scalars().all()
+        
+        customer_responses = [CustomerResponse.from_orm(customer) for customer in customers]
+        
+        return ResponseUtil.success_response(
+            data={
+                "customers": customer_responses,
+                "total": len(customer_responses),
+                "skip": skip,
+                "limit": limit,
+                "has_more": len(customer_responses) == limit
+            },
+            message="Payment customers retrieved successfully"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error listing payment customers: {e}")
+        return ResponseUtil.error_response(
+            message="Failed to retrieve payment customers",
+            errors=[str(e)],
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+# === PAYMENT ANALYTICS ENDPOINT ===
+
+@router.get("/analytics/payments")
+async def get_payment_analytics(
+    days: int = 30,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get payment analytics for specified number of days"""
+    
+    try:
+        from app.models.payment import PaymentTransaction, PaymentStatus
+        from datetime import datetime, timedelta
+        
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+        
+        # Daily payment counts and amounts
+        daily_stats_stmt = select(
+            func.date(PaymentTransaction.created_at).label('date'),
+            func.count(PaymentTransaction.id).label('count'),
+            func.sum(PaymentTransaction.amount).label('amount'),
+            func.count(
+                case(
+                    (PaymentTransaction.status == PaymentStatus.CAPTURED, 1),
+                    else_=None
+                )
+            ).label('successful_count'),
+            func.count(
+                case(
+                    (PaymentTransaction.status == PaymentStatus.FAILED, 1),
+                    else_=None
+                )
+            ).label('failed_count')
+        ).where(
+            PaymentTransaction.created_at >= start_date
+        ).group_by(
+            func.date(PaymentTransaction.created_at)
+        ).order_by(
+            func.date(PaymentTransaction.created_at)
+        )
+        
+        result = await db.execute(daily_stats_stmt)
+        daily_stats = result.all()
+        
+        # Payment method breakdown
+        method_stats_stmt = select(
+            PaymentTransaction.method,
+            func.count(PaymentTransaction.id).label('count'),
+            func.sum(PaymentTransaction.amount).label('amount')
+        ).where(
+            PaymentTransaction.created_at >= start_date
+        ).group_by(
+            PaymentTransaction.method
+        )
+        
+        method_result = await db.execute(method_stats_stmt)
+        method_stats = method_result.all()
+        
+        analytics_data = {
+            "period": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "days": days
+            },
+            "daily_stats": [
+                {
+                    "date": stat.date.isoformat(),
+                    "total_payments": stat.count,
+                    "total_amount": stat.amount or 0,
+                    "successful_payments": stat.successful_count,
+                    "failed_payments": stat.failed_count
+                }
+                for stat in daily_stats
+            ],
+            "method_breakdown": [
+                {
+                    "method": stat.method,
+                    "count": stat.count,
+                    "amount": stat.amount or 0
+                }
+                for stat in method_stats
+            ]
+        }
+        
+        return ResponseUtil.success_response(
+            data=analytics_data,
+            message="Payment analytics retrieved successfully"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error retrieving payment analytics: {e}")
+        return ResponseUtil.error_response(
+            message="Failed to retrieve payment analytics",
+            errors=[str(e)],
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

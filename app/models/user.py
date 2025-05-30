@@ -2,10 +2,9 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship
 
-# Create the base class for all models
-Base = declarative_base()
+from app.models.base import Base
 
 
 class User(Base):
@@ -32,6 +31,9 @@ class User(Base):
 
     # Profile information
     avatar_url = Column(Text, nullable=True)
+    
+    # Relationships
+    razorpay_customer = relationship("RazorpayCustomer", back_populates="user", uselist=False)
     
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', email='{self.email}')>" 

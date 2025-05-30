@@ -52,6 +52,13 @@ CORS_ORIGINS="http://localhost:3000,http://localhost:8080"
 # OpenWeatherMap API
 OPENWEATHERMAP_API_KEY="your_openweathermap_api_key_here"
 
+# === RAZORPAY CONFIGURATION ===
+# Razorpay API credentials (get from Razorpay Dashboard -> Settings -> API Keys)
+RAZORPAY_KEY_ID="your_razorpay_key_id_here"
+RAZORPAY_KEY_SECRET="your_razorpay_key_secret_here"
+RAZORPAY_WEBHOOK_SECRET="your_webhook_secret_here"
+RAZORPAY_ENVIRONMENT="test"  # test or live
+
 # AWS Configuration (if using AWS services)
 AWS_REGION="us-east-1"
 # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY should be set via AWS CLI or IAM roles
@@ -66,4 +73,5 @@ REDIS_URL="redis://localhost:6379"
 # 3. Use a production database (PostgreSQL/MySQL)
 # 4. Set proper CORS_ORIGINS
 # 5. Configure proper logging levels
-# 6. Set up proper SSL/TLS certificates 
+# 6. Set up proper SSL/TLS certificates
+# 7. Configure proper Razorpay credentials for live environment 
